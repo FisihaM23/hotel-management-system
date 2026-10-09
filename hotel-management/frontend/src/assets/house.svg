@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Roof -->
+  <polygon points="32,4 60,28 4,28" fill="#4f46e5" stroke="#4f46e5" stroke-linejoin="round"/>
+  <!-- Chimney -->
+  <rect x="44" y="12" width="6" height="14" fill="#6366f1" stroke="#4f46e5"/>
+  <!-- Wall -->
+  <rect x="8" y="28" width="48" height="30" rx="1" fill="#e0e7ff" stroke="#4f46e5"/>
+  <!-- Door -->
+  <rect x="26" y="42" width="12" height="16" rx="1" fill="#4f46e5"/>
+  <circle cx="36" cy="50" r="1.2" fill="#fff"/>
+  <!-- Left Window -->
+  <rect x="12" y="34" width="10" height="10" rx="1" fill="#bfdbfe" stroke="#4f46e5"/>
+  <line x1="17" y1="34" x2="17" y2="44" stroke="#4f46e5"/>
+  <line x1="12" y1="39" x2="22" y2="39" stroke="#4f46e5"/>
+  <!-- Right Window -->
+  <rect x="42" y="34" width="10" height="10" rx="1" fill="#bfdbfe" stroke="#4f46e5"/>
+  <line x1="47" y1="34" x2="47" y2="44" stroke="#4f46e5"/>
+  <line x1="42" y1="39" x2="52" y2="39" stroke="#4f46e5"/>
+</svg>

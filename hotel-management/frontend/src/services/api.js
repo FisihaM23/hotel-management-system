@@ -1,0 +1,97 @@
+import axios from 'axios'
+
+const BASE = 'http://localhost/hotel-management/api'
+
+const api = axios.create({
+    baseURL: BASE,
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 10000
+})
+
+// Attach token
+api.interceptors.request.use(cfg => {
+    const token = localStorage.getItem('hms_token')
+    if (token) cfg.headers.Authorization = `Bearer ${token}`
+    return cfg
+})
+
+// Only redirect on 401 for non-auth endpoints
+api.interceptors.response.use(
+    res => res,
+    err => {
+        const url = err.config?.url || ''
+        const isAuthCall = url.includes('auth.php')
+        if (err.response?.status === 401 && !isAuthCall) {
+            localStorage.removeItem('hms_token')
+            localStorage.removeItem('hms_user')
+            window.location.href = '/login'
+        }
+        return Promise.reject(err)
+    }
+)
+
+// Auth
+export const login = d => api.post('/auth.php?action=login', d)
+export const register = d => api.post('/auth.php?action=register', d)
+
+// DB test
+export const testConnection = () => api.get('/test_connection.php')
+
+// Rooms
+export const getRooms = (status) => api.get('/rooms.php' + (status ? `?status=${status}` : ''))
+export const createRoom = d => api.post('/rooms.php', d)
+export const updateRoom = (id, d) => api.put(`/rooms.php?id=${id}`, d)
+export const deleteRoom = id => api.delete(`/rooms.php?id=${id}`)
+
+// Users
+export const getUsers = (role) => api.get('/users.php' + (role ? `?role=${role}` : ''))
+export const createUser = d => api.post('/users.php', d)
+export const updateUser = (id, d) => api.put(`/users.php?id=${id}`, d)
+export const deleteUser = id => api.delete(`/users.php?id=${id}`)
+
+// Guests
+export const getGuests = (search) => api.get('/guests.php' + (search ? `?search=${search}` : ''))
+export const createGuest = d => api.post('/guests.php', d)
+export const updateGuest = (id, d) => api.put(`/guests.php?id=${id}`, d)
+export const deleteGuest = id => api.delete(`/guests.php?id=${id}`)
+
+// Bookings
+export const getBookings = (status) => api.get('/bookings.php' + (status ? `?status=${status}` : ''))
+export const getMyBookings = () => api.get('/bookings.php?mine=1')
+export const createBooking = d => api.post('/bookings.php', d)
+export const updateBooking = (id, d) => api.put(`/bookings.php?id=${id}`, d)
+export const deleteBooking = id => api.delete(`/bookings.php?id=${id}`)
+
+// Payments
+export const getPayments = () => api.get('/payments.php')
+export const getBookingPayments = id => api.get(`/payments.php?booking_id=${id}`)
+export const createPayment = d => api.post('/payments.php', d)
+export const updatePayment = (id, d) => api.put(`/payments.php?id=${id}`, d)
+
+// Housekeeping
+export const getHousekeepingTasks = (status) => api.get('/housekeeping.php' + (status ? `?status=${status}` : ''))
+export const createHousekeepingTask = d => api.post('/housekeeping.php', d)
+export const updateHousekeepingTask = (id, d) => api.put(`/housekeeping.php?id=${id}`, d)
+export const deleteHousekeepingTask = id => api.delete(`/housekeeping.php?id=${id}`)
+
+// Maintenance
+export const getMaintenanceRequests = (status) => api.get('/maintenance.php' + (status ? `?status=${status}` : ''))
+export const createMaintenanceRequest = d => api.post('/maintenance.php', d)
+export const updateMaintenanceRequest = (id, d) => api.put(`/maintenance.php?id=${id}`, d)
+
+// Dashboard
+export const getDashboard = () => api.get('/dashboard.php')
+
+// Reports
+export const getReports = (type, from, to) => api.get(`/reports.php?type=${type}&from=${from}&to=${to}`)
+
+// Invoices
+export const getInvoices = () => api.get('/invoices.php')
+export const getMyInvoices = () => api.get('/invoices.php')
+export const createInvoice = d => api.post('/invoices.php', d)
+
+// Notifications
+export const getNotifications = () => api.get('/notifications.php')
+export const markNotificationRead = id => api.put(`/notifications.php?id=${id}`)
+
+export default api
