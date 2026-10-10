@@ -30,9 +30,10 @@ switch ($method) {
         } else {
             if ($user['role'] === 'customer') {
                 $stmt = $conn->prepare("
-                    SELECT i.*, r.room_number, b.check_in, b.check_out
+                    SELECT i.*, u.name as guest_name, r.room_number, b.check_in, b.check_out
                     FROM invoices i
                     JOIN bookings b ON i.booking_id = b.id
+                    JOIN users u ON b.customer_id = u.id
                     JOIN rooms r ON b.room_id = r.id
                     WHERE b.customer_id = ?
                     ORDER BY i.created_at DESC
@@ -41,7 +42,7 @@ switch ($method) {
                 $stmt->execute();
             } else {
                 $stmt = $conn->prepare("
-                    SELECT i.*, u.name as customer_name, r.room_number, b.check_in, b.check_out
+                    SELECT i.*, u.name as customer_name, u.name as guest_name, r.room_number, b.check_in, b.check_out
                     FROM invoices i
                     JOIN bookings b ON i.booking_id = b.id
                     JOIN users u ON b.customer_id = u.id

@@ -132,6 +132,10 @@ foreach ($tables as $sql) {
     }
 }
 
+// Ensure resolution_notes column exists in maintenance_requests
+$conn->query("ALTER TABLE maintenance_requests ADD COLUMN IF NOT EXISTS resolution_notes TEXT NULL");
+$steps[] = 'Ensured resolution_notes column';
+
 // 3. Seed users with correct password hash
 $hash = password_hash('password123', PASSWORD_BCRYPT);
 $verify = password_verify('password123', $hash);

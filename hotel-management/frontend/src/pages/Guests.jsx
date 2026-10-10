@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Search, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getGuests, createGuest, updateGuest, deleteGuest } from '../services/api'
 
-const emptyForm = { name: '', email: '', phone: '', address: '', id_proof: '' }
+const emptyForm = { name: '', email: '', phone: '', address: '' }
 
 export default function Guests() {
     const [guests, setGuests] = useState([])
@@ -147,10 +147,6 @@ export default function Guests() {
                                     <div className="form-group">
                                         <label className="form-label">Phone</label>
                                         <input className="form-control" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label className="form-label">ID Proof</label>
-                                        <input className="form-control" placeholder="Passport / License No." value={form.id_proof} onChange={e => setForm({ ...form, id_proof: e.target.value })} />
                                     </div>
                                 </div>
                                 <div className="form-group">

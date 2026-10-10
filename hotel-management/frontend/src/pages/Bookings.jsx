@@ -20,7 +20,7 @@ export default function Bookings() {
 
     const load = () => {
         setLoading(true)
-        Promise.all([getBookings(), getRooms('available'), getGuests()])
+        Promise.all([getBookings(), getRooms(), getGuests()])
             .then(([b, r, g]) => { setBookings(b.data); setRooms(r.data); setGuests(g.data) })
             .catch(() => toast.error('Failed to load data'))
             .finally(() => setLoading(false))
@@ -30,7 +30,7 @@ export default function Bookings() {
 
     const openAdd = () => { setForm(emptyForm); setEditId(null); setModal(true) }
     const openEdit = (b) => {
-        setForm({ guest_id: b.guest_id, room_id: b.room_id, check_in: b.check_in, check_out: b.check_out, adults: b.adults, children: b.children, special_requests: b.special_requests || '', status: b.status })
+        setForm({ guest_id: b.customer_id, room_id: b.room_id, check_in: b.check_in, check_out: b.check_out, adults: b.adults, children: b.children, special_requests: b.special_requests || '', status: b.status })
         setEditId(b.id); setModal(true)
     }
     const closeModal = () => { setModal(false); setForm(emptyForm); setEditId(null) }
@@ -141,7 +141,7 @@ export default function Bookings() {
                                         <label className="form-label">Room *</label>
                                         <select className="form-control" value={form.room_id} onChange={e => setForm({ ...form, room_id: e.target.value })} required>
                                             <option value="">Select room</option>
-                                            {rooms.map(r => <option key={r.id} value={r.id}>Room {r.room_number} - {r.type} (${r.price_per_night}/night)</option>)}
+                                            {rooms.map(r => <option key={r.id} value={r.id}>Room {r.room_number} - {r.type} ({r.status}) (${r.price_per_night}/night)</option>)}
                                         </select>
                                     </div>
                                 </div>

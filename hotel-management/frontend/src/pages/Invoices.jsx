@@ -16,7 +16,25 @@ export default function Invoices() {
 
     useEffect(() => { load() }, [])
 
-    const totalAmount = invoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0)
+    const totalAmount = invoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0)
+
+    const handleDownload = (inv) => {
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+        <html><head><title>Invoice #${inv.id}</title></head>
+        <body style="font-family:sans-serif;padding:40px">
+          <h2>Invoice #${inv.id}</h2>
+          <p><strong>Booking ID:</strong> ${inv.booking_id}</p>
+          <p><strong>Guest:</strong> ${inv.guest_name || 'N/A'}</p>
+          <p><strong>Amount:</strong> $${Number(inv.total || 0).toFixed(2)}</p>
+          <p><strong>Tax (10%):</strong> $${Number(inv.tax_amount || 0).toFixed(2)}</p>
+          <p><strong>Date:</strong> ${new Date(inv.created_at).toLocaleDateString()}</p>
+          <p><strong>Status:</strong> ${inv.status}</p>
+        </body></html>
+      `);
+        printWindow.document.close();
+        printWindow.print();
+    };
 
     return (
         <div>
@@ -50,12 +68,12 @@ export default function Invoices() {
                                     : invoices.map(inv => (
                                         <tr key={inv.id}>
                                             <td style={{ fontWeight: 600 }}>{inv.invoice_number}</td>
-                                            <td>{inv.date}</td>
-                                            <td>{inv.bookings}</td>
-                                            <td style={{ fontWeight: 600 }}>${Number(inv.amount || 0).toFixed(2)}</td>
+                                            <td>{new Date(inv.created_at).toLocaleDateString()}</td>
+                                            <td>{inv.booking_id}</td>
+                                            <td style={{ fontWeight: 600 }}>${Number(inv.total || 0).toFixed(2)}</td>
                                             <td><span className={`badge ${statusBadge[inv.status]}`} style={{ textTransform: 'capitalize' }}>{inv.status}</span></td>
                                             <td>
-                                                <button className="btn btn-outline btn-sm btn-icon" title="Download"><Download size={13} /></button>
+                                                <button className="btn btn-outline btn-sm btn-icon" title="Download" onClick={() => handleDownload(inv)}><Download size={13} /></button>
                                             </td>
                                         </tr>
                                     ))}

@@ -6,7 +6,7 @@ import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 
 const demoAccounts = [
-  { label: 'Admin', email: 'befather7@gmail.com', color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '👑' },
+  { label: 'Admin', email: 'admin@hotel.com', color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '👑' },
   { label: 'Manager', email: 'manager@hotel.com', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe', icon: '🏨' },
   { label: 'Receptionist', email: 'receptionist@hotel.com', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', icon: '🛎️' },
   { label: 'Customer', email: 'customer@hotel.com', color: '#10b981', bg: '#f0fdf4', border: '#a7f3d0', icon: '🧳' },
@@ -20,7 +20,7 @@ export default function Login() {
   const [tab, setTab] = useState('login')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [email, setEmail] = useState('befather7@gmail.com')
+  const [email, setEmail] = useState('admin@hotel.com')
   const [password, setPassword] = useState('password123')
   const [regName, setRegName] = useState('')
   const [regEmail, setRegEmail] = useState('')
@@ -58,7 +58,11 @@ export default function Login() {
 
   const handleSignup = async (e) => {
     e.preventDefault()
-    if (regPass.length < 6) return toast.error('Password must be at least 6 characters')
+    if (regPass.length < 8) return toast.error('Password must be at least 8 characters')
+    if (!/[A-Z]/.test(regPass)) return toast.error('Password must contain an uppercase letter')
+    if (!/[a-z]/.test(regPass)) return toast.error('Password must contain a lowercase letter')
+    if (!/[0-9]/.test(regPass)) return toast.error('Password must contain a number')
+    if (!/[\W_]/.test(regPass)) return toast.error('Password must contain a special character')
     if (regPass !== regConf) return toast.error('Passwords do not match')
     setLoading(true)
     try {
@@ -122,7 +126,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="befather7@gmail.com"
+                placeholder="admin@hotel.com"
                 required
               />
             </div>
@@ -226,7 +230,7 @@ export default function Login() {
                   )
                 })}
               </div>
-              <p style={{ textAlign: 'center', fontSize: 11, color: '#d1d5db', marginTop: 10 }}>All passwords: password123 &nbsp;|&nbsp; Admin: Admin@2024!</p>
+              <p style={{ textAlign: 'center', fontSize: 11, color: '#d1d5db', marginTop: 10 }}>All passwords: password123</p>
             </div>
           </form>
         )}
@@ -252,7 +256,7 @@ export default function Login() {
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Password *</label>
-                <input className="form-control" type="password" value={regPass} onChange={e => setRegPass(e.target.value)} placeholder="Min 6 chars" required />
+                <input className="form-control" type="password" value={regPass} onChange={e => setRegPass(e.target.value)} placeholder="Min 8 chars" required />
               </div>
               <div className="form-group">
                 <label className="form-label">Confirm *</label>

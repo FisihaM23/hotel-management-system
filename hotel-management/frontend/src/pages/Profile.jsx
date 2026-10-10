@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { updateUser } from '../services/api'
+import { getMyProfile, updateMyProfile } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
 export default function Profile() {
@@ -15,7 +15,7 @@ export default function Profile() {
         try {
             const payload = { name: form.name, phone: form.phone }
             if (form.password) payload.password = form.password
-            await updateUser(user.id, payload)
+            await updateMyProfile(payload)
             loginUser(localStorage.getItem('hms_token'), { ...user, name: form.name, phone: form.phone })
             toast.success('Profile updated')
             setForm(f => ({ ...f, password: '', confirm: '' }))

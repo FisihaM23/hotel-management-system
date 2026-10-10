@@ -122,7 +122,7 @@ export default function Rooms() {
                                     <div className="form-group">
                                         <label className="form-label">Type *</label>
                                         <select className="form-control" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
-                                            {['single', 'double', 'suite', 'deluxe', 'penthouse', 'modern house'].map(t => <option key={t} value={t} style={{ textTransform: 'capitalize' }}>{t}</option>)}
+                                            {['single', 'double', 'suite', 'deluxe', 'penthouse'].map(t => <option key={t} value={t} style={{ textTransform: 'capitalize' }}>{t}</option>)}
                                         </select>
                                     </div>
                                 </div>

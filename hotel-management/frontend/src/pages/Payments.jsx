@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, CreditCard } from 'lucide-react'
+import { Plus, Pencil, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getPayments, createPayment, updatePayment, getBookings } from '../services/api'
 
@@ -85,7 +85,7 @@ export default function Payments() {
                                             <td style={{ fontSize: 12, color: '#6b7280' }}>{p.transaction_id || '-'}</td>
                                             <td><span className={`badge ${statusBadge[p.status]}`} style={{ textTransform: 'capitalize' }}>{p.status}</span></td>
                                             <td style={{ fontSize: 12 }}>{new Date(p.paid_at).toLocaleDateString()}</td>
-                                            <td><button className="btn btn-outline btn-sm btn-icon" onClick={() => openEdit(p)}><Plus size={13} /></button></td>
+                                            <td><button className="btn btn-outline btn-sm btn-icon" onClick={() => openEdit(p)}><Pencil size={13} /></button></td>
                                         </tr>
                                     ))}
                             </tbody>

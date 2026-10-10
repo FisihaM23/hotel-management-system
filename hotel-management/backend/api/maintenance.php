@@ -8,9 +8,6 @@ $conn = getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
 
-// Ensure resolution_notes column exists
-$conn->query("ALTER TABLE maintenance_requests ADD COLUMN IF NOT EXISTS resolution_notes TEXT NULL");
-
 $baseQuery = "SELECT m.*, r.room_number, u1.name as reporter_name, u2.name as assigned_name
               FROM maintenance_requests m
               LEFT JOIN rooms r ON m.room_id = r.id

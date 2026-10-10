@@ -94,4 +94,7 @@ export const createInvoice = d => api.post('/invoices.php', d)
 export const getNotifications = () => api.get('/notifications.php')
 export const markNotificationRead = id => api.put(`/notifications.php?id=${id}`)
 
+export const getMyProfile = () => api.get('/profile.php');
+export const updateMyProfile = data => api.put('/profile.php', data);
+
 export default api

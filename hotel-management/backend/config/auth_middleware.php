@@ -16,6 +16,12 @@ function authenticate($allowed_roles = []) {
         die(json_encode(['error' => 'Invalid token']));
     }
     $user_id = (int)$parts[0];
+    $issued_at = (int)$parts[1];
+    if (time() - $issued_at > 86400) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Token expired. Please log in again.']);
+        exit;
+    }
     $conn = getConnection();
     $stmt = $conn->prepare("SELECT id, name, email, role, status FROM users WHERE id = ? AND status = 'active'");
     $stmt->bind_param("i", $user_id);
