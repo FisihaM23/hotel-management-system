@@ -6,128 +6,448 @@ require_once '../config/auth_middleware.php';
 $authUser = authenticate();
 $conn = getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
-$id = isset($_GET['id']) ? (int)$_GET['id'] : null;
+$id = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $mine = isset($_GET['mine']);
+$staffRoles = ['admin', 'manager', 'receptionist'];
 
 $baseQuery = "SELECT b.*, u.name as guest_name, u.email as guest_email, u.phone as guest_phone,
-              r.room_number, r.type as room_type, r.price_per_night
+              u.reason_for_stay, u.id_proof, u.id_number,
+              r.room_number, r.type as room_type, r.price_per_night,
+              COALESCE(pay.paid_amount, 0) as paid_amount,
+              ROUND(GREATEST(0, b.total_amount - COALESCE(pay.paid_amount, 0)), 2) as balance_amount
               FROM bookings b
               JOIN users u ON b.customer_id = u.id
-              JOIN rooms r ON b.room_id = r.id";
+              JOIN rooms r ON b.room_id = r.id
+              LEFT JOIN (
+                  SELECT booking_id, SUM(amount) as paid_amount 
+                  FROM payments 
+                  WHERE status = 'completed' 
+                  GROUP BY booking_id
+              ) pay ON pay.booking_id = b.id";
+
+function fetchBooking($conn, $bookingId) {
+    $stmt = $conn->prepare("SELECT * FROM bookings WHERE id = ?");
+    $stmt->bind_param('i', $bookingId);
+    $stmt->execute();
+    return $stmt->get_result()->fetch_assoc();
+}
 
 switch ($method) {
     case 'GET':
-        if ($mine) {
+        if ($mine || $authUser['role'] === 'customer') {
             $stmt = $conn->prepare("$baseQuery WHERE b.customer_id=? ORDER BY b.created_at DESC");
-            $stmt->bind_param("i", $authUser['id']); $stmt->execute();
-            echo json_encode($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
-        } elseif ($id) {
+            $stmt->bind_param('i', $authUser['id']);
+            $stmt->execute();
+            json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+            break;
+        }
+        if (!in_array($authUser['role'], $staffRoles, true)) {
+            json_fail(403, 'Access denied');
+        }
+        if ($id) {
             $stmt = $conn->prepare("$baseQuery WHERE b.id=?");
-            $stmt->bind_param("i", $id); $stmt->execute();
-            echo json_encode($stmt->get_result()->fetch_assoc());
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            json_ok($stmt->get_result()->fetch_assoc());
         } else {
             $status = $_GET['status'] ?? null;
             if ($status) {
                 $stmt = $conn->prepare("$baseQuery WHERE b.status=? ORDER BY b.created_at DESC");
-                $stmt->bind_param("s", $status); $stmt->execute();
-                echo json_encode($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+                $stmt->bind_param('s', $status);
+                $stmt->execute();
+                json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
             } else {
-                echo json_encode($conn->query("$baseQuery ORDER BY b.created_at DESC")->fetch_all(MYSQLI_ASSOC));
+                json_ok($conn->query("$baseQuery ORDER BY b.created_at DESC")->fetch_all(MYSQLI_ASSOC));
             }
         }
         break;
-    case 'POST':
-        $d = json_decode(file_get_contents('php://input'), true);
 
-        // Accept either guest_id (staff form) or customer_id (direct)
-        // When a customer self-books, guest_id is set to user.id in CustomerPortal
-        $customer_id = isset($d['customer_id']) ? (int)$d['customer_id'] : (isset($d['guest_id']) ? (int)$d['guest_id'] : 0);
-        // If customer is booking for themselves, override with their own id
+    case 'POST':
+        $d = json_decode(file_get_contents('php://input'), true) ?: [];
+        $customer_id = isset($d['customer_id']) ? (int) $d['customer_id'] : (isset($d['guest_id']) ? (int) $d['guest_id'] : 0);
+
         if ($authUser['role'] === 'customer') {
-            $customer_id = (int)$authUser['id'];
+            $customer_id = (int) $authUser['id'];
+        } elseif (!in_array($authUser['role'], $staffRoles, true)) {
+            json_fail(403, 'Access denied');
         }
+
+        // Automatic Guest Registration based on Hotel Registration Format Rule
         if (!$customer_id) {
-            http_response_code(400);
-            echo json_encode(['error' => 'Guest/customer is required']);
+            $guestName = trim($d['name'] ?? ($d['guest_name'] ?? ''));
+            $guestEmail = trim($d['email'] ?? ($d['guest_email'] ?? ''));
+            $guestPhone = trim($d['phone'] ?? ($d['guest_phone'] ?? ''));
+            $reasonForStay = trim($d['reason_for_stay'] ?? 'Tourism / Leisure');
+            $idProof = trim($d['id_proof'] ?? 'National ID');
+            $idNumber = trim($d['id_number'] ?? '');
+            $address = trim($d['address'] ?? '');
+
+            if (!$guestName) {
+                json_fail(400, 'Customer registration is required. Please provide guest name based on hotel registration rules.');
+            }
+
+            if (!$guestEmail) {
+                $cleanName = strtolower(preg_replace('/[^a-z0-9]/', '', $guestName));
+                $guestEmail = ($cleanName ?: 'guest') . '_' . time() . '@hotel.com';
+            }
+
+            // Check if guest with this email already exists
+            $findStmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+            $findStmt->bind_param('s', $guestEmail);
+            $findStmt->execute();
+            $existingGuest = $findStmt->get_result()->fetch_assoc();
+
+            if ($existingGuest) {
+                $customer_id = (int) $existingGuest['id'];
+                $updGuest = $conn->prepare("UPDATE users SET name=?, phone=?, reason_for_stay=?, id_proof=?, id_number=?, address=? WHERE id=?");
+                $updGuest->bind_param('ssssssi', $guestName, $guestPhone, $reasonForStay, $idProof, $idNumber, $address, $customer_id);
+                $updGuest->execute();
+            } else {
+                $pwdHash = password_hash(DEMO_PASSWORD, PASSWORD_DEFAULT);
+                $insGuest = $conn->prepare("INSERT INTO users (name, email, password, role, phone, address, reason_for_stay, id_proof, id_number) VALUES (?, ?, ?, 'customer', ?, ?, ?, ?, ?)");
+                $insGuest->bind_param('ssssssss', $guestName, $guestEmail, $pwdHash, $guestPhone, $address, $reasonForStay, $idProof, $idNumber);
+                executeOrFail($insGuest, $conn);
+                $customer_id = $conn->insert_id;
+            }
+        } else {
+            // Update existing guest's registration details if provided during booking
+            $reasonForStay = trim($d['reason_for_stay'] ?? '');
+            $idProof = trim($d['id_proof'] ?? '');
+            $idNumber = trim($d['id_number'] ?? '');
+            $guestPhone = trim($d['phone'] ?? ($d['guest_phone'] ?? ''));
+            $guestName = trim($d['name'] ?? ($d['guest_name'] ?? ''));
+
+            $updates = [];
+            $params = [];
+            $types = '';
+            if ($guestName) { $updates[] = "name = ?"; $params[] = $guestName; $types .= 's'; }
+            if ($guestPhone) { $updates[] = "phone = ?"; $params[] = $guestPhone; $types .= 's'; }
+            if ($reasonForStay) { $updates[] = "reason_for_stay = ?"; $params[] = $reasonForStay; $types .= 's'; }
+            if ($idProof) { $updates[] = "id_proof = ?"; $params[] = $idProof; $types .= 's'; }
+            if ($idNumber) { $updates[] = "id_number = ?"; $params[] = $idNumber; $types .= 's'; }
+
+            if (!empty($updates)) {
+                $params[] = $customer_id;
+                $types .= 'i';
+                $sqlUpd = "UPDATE users SET " . implode(', ', $updates) . " WHERE id = ?";
+                $uStmt = $conn->prepare($sqlUpd);
+                $uStmt->bind_param($types, ...$params);
+                $uStmt->execute();
+            }
+        }
+
+        $room_id = (int) ($d['room_id'] ?? 0);
+        $check_in = $d['check_in'] ?? '';
+        $check_out = $d['check_out'] ?? '';
+        if (!$room_id || !$check_in || !$check_out || strtotime($check_out) <= strtotime($check_in)) {
+            json_fail(400, 'Valid room, check-in and check-out dates are required');
+        }
+
+        $stmt = $conn->prepare("SELECT room_number, price_per_night, status FROM rooms WHERE id=?");
+        $stmt->bind_param('i', $room_id);
+        $stmt->execute();
+        $room = $stmt->get_result()->fetch_assoc();
+        if (!$room) {
+            json_fail(400, 'Room not found');
+        }
+        if ($room['status'] === 'maintenance') {
+            json_fail(400, 'Selected room is under maintenance');
+        }
+        if (roomHasOverlap($conn, $room_id, $check_in, $check_out)) {
+            json_fail(409, 'Room is already booked for those dates. Please select an available room.');
+        }
+
+        $nights = max(1, (strtotime($check_out) - strtotime($check_in)) / 86400);
+        $roomTotal = (float) $room['price_per_night'] * $nights;
+
+        // Process Pre-Ordered Dining & Bar Items
+        $diningItems = $d['dining_items'] ?? [];
+        if (is_string($diningItems)) {
+            $diningItems = json_decode($diningItems, true) ?: [];
+        }
+        $diningTotal = 0.0;
+        $cleanDiningItems = [];
+        if (!empty($diningItems) && is_array($diningItems)) {
+            foreach ($diningItems as $item) {
+                $itemId = (int) ($item['id'] ?? 0);
+                $qty = max(1, (int) ($item['qty'] ?? 1));
+                if (!$itemId) continue;
+                $mStmt = $conn->prepare("SELECT id, name, price, is_available FROM menu_items WHERE id = ?");
+                $mStmt->bind_param('i', $itemId);
+                $mStmt->execute();
+                $menuRow = $mStmt->get_result()->fetch_assoc();
+                if ($menuRow) {
+                    $itemPrice = (float) $menuRow['price'];
+                    $sub = $itemPrice * $qty;
+                    $diningTotal += $sub;
+                    $cleanDiningItems[] = [
+                        'id' => (int) $menuRow['id'],
+                        'name' => $menuRow['name'],
+                        'price' => $itemPrice,
+                        'qty' => $qty,
+                        'subtotal' => $sub
+                    ];
+                }
+            }
+        }
+
+        $total = $roomTotal + $diningTotal;
+        $recep = $authUser['role'] !== 'customer' ? $authUser['id'] : null;
+        $special = trim($d['special_requests'] ?? '');
+        if ($diningTotal > 0 && !empty($cleanDiningItems)) {
+            $deliveryPref = $d['dining_delivery_time'] ?? 'On arrival / Check-in';
+            $diningNote = "[Pre-ordered Dining & Bar: $" . number_format($diningTotal, 2) . " (" . count($cleanDiningItems) . " items) - Preference: " . $deliveryPref . "]";
+            $special = $special ? ($special . "\n" . $diningNote) : $diningNote;
+        }
+        $status = 'pending';
+        if (in_array($authUser['role'], $staffRoles, true) && !empty($d['status'])) {
+            $allowed = ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'];
+            if (in_array($d['status'], $allowed, true)) {
+                $status = $d['status'];
+            }
+        }
+        $adults = (int) ($d['adults'] ?? 1);
+        $children = (int) ($d['children'] ?? 0);
+
+        $stmt = $conn->prepare("INSERT INTO bookings (customer_id,room_id,receptionist_id,check_in,check_out,adults,children,special_requests,total_amount,status) VALUES (?,?,?,?,?,?,?,?,?,?)");
+        $stmt->bind_param('iiissiisds', $customer_id, $room_id, $recep, $check_in, $check_out, $adults, $children, $special, $total, $status);
+        executeOrFail($stmt, $conn);
+        $newId = $conn->insert_id;
+
+        // If dining items were pre-ordered, automatically create an order in dining_orders
+        if ($diningTotal > 0 && !empty($cleanDiningItems)) {
+            $order_num = 'ORD-' . date('Y') . '-' . strtoupper(substr(uniqid(), -6));
+            $itemsJson = json_encode($cleanDiningItems);
+            $deliveryType = 'room_service';
+            $orderStatus = 'pending';
+            $depositAmount = isset($d['payment_amount']) ? (float)$d['payment_amount'] : (isset($d['deposit_amount']) ? (float)$d['deposit_amount'] : 0);
+            $paymentStatus = ($depositAmount >= $total) ? 'paid' : ($depositAmount > 0 ? 'partially_paid' : 'charged_to_room');
+            $diningNotes = 'Pre-ordered with Booking #' . $newId . ' (Time: ' . ($d['dining_delivery_time'] ?? 'On arrival') . '). ' . ($d['dining_notes'] ?? '');
+            
+            $dStmt = $conn->prepare("INSERT INTO dining_orders (order_number, customer_id, room_number, items, total_amount, delivery_type, status, payment_status, special_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $dStmt->bind_param('sisdsssss', $order_num, $customer_id, $room['room_number'], $itemsJson, $diningTotal, $deliveryType, $orderStatus, $paymentStatus, $diningNotes);
+            $dStmt->execute();
+        }
+
+        // If booking was directly marked checked_in, set room status to occupied
+        if ($status === 'checked_in') {
+            $rUpd = $conn->prepare("UPDATE rooms SET status='occupied' WHERE id=?");
+            $rUpd->bind_param('i', $room_id);
+            $rUpd->execute();
+        } else {
+            syncRoomStatus($conn, $room_id);
+        }
+
+        // If initial deposit/payment was provided with booking
+        $deposit = isset($d['payment_amount']) ? (float)$d['payment_amount'] : (isset($d['deposit_amount']) ? (float)$d['deposit_amount'] : 0);
+        if ($deposit > 0) {
+            $payMethod = trim($d['payment_method'] ?? ($d['method'] ?? 'cash'));
+            $txn = trim($d['transaction_id'] ?? '');
+            $notes = trim($d['notes'] ?? 'Initial booking deposit / payment');
+            $pStmt = $conn->prepare("INSERT INTO payments (booking_id, amount, method, status, transaction_id, notes) VALUES (?, ?, ?, 'completed', ?, ?)");
+            $pStmt->bind_param('idsss', $newId, $deposit, $payMethod, $txn, $notes);
+            $pStmt->execute();
+        }
+
+        $msg = "Your booking for Room " . $room['room_number'] . " has been created successfully.";
+        $notif = $conn->prepare("INSERT INTO notifications (user_id,title,message,type) VALUES (?,'Booking Confirmed',?,'info')");
+        $notif->bind_param('is', $customer_id, $msg);
+        $notif->execute();
+
+        json_ok(['id' => $newId, 'total_amount' => $total, 'customer_id' => $customer_id, 'message' => 'Booking registered successfully based on hotel rules']);
+        break;
+
+    case 'PUT':
+        if (!$id) {
+            json_fail(400, 'Booking ID is required');
+        }
+        $existing = fetchBooking($conn, $id);
+        if (!$existing) {
+            json_fail(404, 'Booking not found');
+        }
+        $d = json_decode(file_get_contents('php://input'), true) ?: [];
+
+        if ($authUser['role'] === 'customer') {
+            if ((int) $existing['customer_id'] !== (int) $authUser['id']) {
+                json_fail(403, 'Access denied');
+            }
+            if (($d['status'] ?? '') !== 'cancelled' || !in_array($existing['status'], ['pending', 'confirmed'], true)) {
+                json_fail(403, 'You can only cancel your own pending or confirmed bookings');
+            }
+            $stmt = $conn->prepare("UPDATE bookings SET status='cancelled' WHERE id=?");
+            $stmt->bind_param('i', $id);
+            executeOrFail($stmt, $conn);
+            syncRoomStatus($conn, (int) $existing['room_id']);
+            json_ok(['message' => 'Booking cancelled']);
             break;
         }
 
-        $stmt = $conn->prepare("SELECT price_per_night FROM rooms WHERE id=?");
-        $stmt->bind_param("i", $d['room_id']); $stmt->execute();
-        $room = $stmt->get_result()->fetch_assoc();
-        if (!$room) { http_response_code(400); echo json_encode(['error' => 'Room not found']); break; }
+        if (!in_array($authUser['role'], $staffRoles, true)) {
+            json_fail(403, 'Access denied');
+        }
 
-        $nights = max(1, (strtotime($d['check_out']) - strtotime($d['check_in'])) / 86400);
-        $total = $room['price_per_night'] * $nights;
-        $recep = $authUser['role'] !== 'customer' ? $authUser['id'] : null;
-        $special = $d['special_requests'] ?? '';
-        $status = $d['status'] ?? 'pending';
-        $adults = (int)($d['adults'] ?? 1);
-        $children = (int)($d['children'] ?? 0);
+        $oldRoom = (int) $existing['room_id'];
+        $action = $d['action'] ?? '';
+        $newStatus = $d['status'] ?? '';
 
-        $stmt = $conn->prepare("INSERT INTO bookings (customer_id,room_id,receptionist_id,check_in,check_out,adults,children,special_requests,total_amount,status) VALUES (?,?,?,?,?,?,?,?,?,?)");
-        $stmt->bind_param("iiissiisds", $customer_id, $d['room_id'], $recep, $d['check_in'], $d['check_out'], $adults, $children, $special, $total, $status);
-        if ($stmt->execute()) {
-            $newId = $conn->insert_id;
-            $conn->query("UPDATE rooms SET status='occupied' WHERE id=" . (int)$d['room_id']);
-            // Notify customer
-            $msg = "Your booking has been received and is pending confirmation.";
-            $notif = $conn->prepare("INSERT INTO notifications (user_id,title,message,type) VALUES (?,'Booking Received',?,'info')");
-            $notif->bind_param("is", $customer_id, $msg); $notif->execute();
-            echo json_encode(['id' => $newId, 'total_amount' => $total, 'message' => 'Booking created']);
-        } else { http_response_code(400); echo json_encode(['error' => $conn->error]); }
-        break;
-    case 'PUT':
-        $d = json_decode(file_get_contents('php://input'), true);
+        // Dedicated Check-In Action
+        if ($action === 'check_in' || $newStatus === 'checked_in') {
+            $stmt = $conn->prepare("UPDATE bookings SET status='checked_in' WHERE id=?");
+            $stmt->bind_param('i', $id);
+            executeOrFail($stmt, $conn);
 
-        // Full edit (from staff booking form): updates all fields
+            // Update room status to occupied
+            $roomUpd = $conn->prepare("UPDATE rooms SET status='occupied' WHERE id=?");
+            $roomUpd->bind_param('i', $oldRoom);
+            $roomUpd->execute();
+
+            // Record check-in deposit or payment if provided
+            $payAmount = isset($d['payment_amount']) ? (float)$d['payment_amount'] : (isset($d['deposit_amount']) ? (float)$d['deposit_amount'] : 0);
+            if ($payAmount > 0) {
+                $payMethod = trim($d['payment_method'] ?? ($d['method'] ?? 'cash'));
+                $txn = trim($d['transaction_id'] ?? '');
+                $notes = trim($d['notes'] ?? 'Check-in payment / deposit');
+                $statusPay = 'completed';
+                $pStmt = $conn->prepare("INSERT INTO payments (booking_id, amount, method, status, transaction_id, notes) VALUES (?, ?, ?, ?, ?, ?)");
+                $pStmt->bind_param('idssss', $id, $payAmount, $payMethod, $statusPay, $txn, $notes);
+                $pStmt->execute();
+            }
+
+            // Send notification to guest
+            $roomStmt = $conn->prepare("SELECT room_number FROM rooms WHERE id=?");
+            $roomStmt->bind_param('i', $oldRoom);
+            $roomStmt->execute();
+            $roomNum = $roomStmt->get_result()->fetch_assoc()['room_number'] ?? '';
+            $msg = "Welcome! You have checked in to Room " . $roomNum . ". Enjoy your stay!";
+            $cId = (int) $existing['customer_id'];
+            $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Checked In Successfully', ?, 'success')");
+            $notif->bind_param('is', $cId, $msg);
+            $notif->execute();
+
+            json_ok(['message' => 'Guest successfully checked in. Room marked as occupied.']);
+            break;
+        }
+
+        // Dedicated Check-Out Action
+        if ($action === 'check_out' || $newStatus === 'checked_out') {
+            $stmt = $conn->prepare("UPDATE bookings SET status='checked_out' WHERE id=?");
+            $stmt->bind_param('i', $id);
+            executeOrFail($stmt, $conn);
+
+            // Update room status to cleaning
+            $roomUpd = $conn->prepare("UPDATE rooms SET status='cleaning' WHERE id=?");
+            $roomUpd->bind_param('i', $oldRoom);
+            $roomUpd->execute();
+
+            // Record settlement payment if provided
+            $payAmount = isset($d['payment_amount']) ? (float)$d['payment_amount'] : 0;
+            if ($payAmount > 0) {
+                $payMethod = trim($d['payment_method'] ?? ($d['method'] ?? 'cash'));
+                $txn = trim($d['transaction_id'] ?? '');
+                $notes = trim($d['notes'] ?? 'Check-out settlement payment');
+                $statusPay = 'completed';
+                $pStmt = $conn->prepare("INSERT INTO payments (booking_id, amount, method, status, transaction_id, notes) VALUES (?, ?, ?, ?, ?, ?)");
+                $pStmt->bind_param('idssss', $id, $payAmount, $payMethod, $statusPay, $txn, $notes);
+                $pStmt->execute();
+            }
+
+            // Sync or create invoice marked as paid
+            $invCheck = $conn->prepare("SELECT id FROM invoices WHERE booking_id = ?");
+            $invCheck->bind_param('i', $id);
+            $invCheck->execute();
+            $existingInv = $invCheck->get_result()->fetch_assoc();
+            if ($existingInv) {
+                $updInv = $conn->prepare("UPDATE invoices SET status='paid' WHERE id=?");
+                $updInv->bind_param('i', $existingInv['id']);
+                $updInv->execute();
+            } else {
+                $subtotal = (float) $existing['total_amount'];
+                $tax = round($subtotal * 0.10, 2);
+                $totalInv = $subtotal + $tax;
+                $invNum = 'INV-' . date('Y') . '-' . strtoupper(uniqid());
+                $dueDate = date('Y-m-d');
+                $invStatus = 'paid';
+                $insInv = $conn->prepare("INSERT INTO invoices (booking_id, invoice_number, subtotal, tax, discount, total, status, due_date) VALUES (?, ?, ?, ?, 0.00, ?, ?, ?)");
+                $insInv->bind_param('isdddss', $id, $invNum, $subtotal, $tax, $totalInv, $invStatus, $dueDate);
+                $insInv->execute();
+            }
+
+            // Send notification to guest
+            $roomStmt = $conn->prepare("SELECT room_number FROM rooms WHERE id=?");
+            $roomStmt->bind_param('i', $oldRoom);
+            $roomStmt->execute();
+            $roomNum = $roomStmt->get_result()->fetch_assoc()['room_number'] ?? '';
+            $msg = "You have checked out of Room " . $roomNum . ". Thank you for staying with us!";
+            $cId = (int) $existing['customer_id'];
+            $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Checked Out', ?, 'info')");
+            $notif->bind_param('is', $cId, $msg);
+            $notif->execute();
+
+            json_ok(['message' => 'Guest checked out successfully. Room sent to housekeeping (Cleaning).']);
+            break;
+        }
+
+        // Full Booking Edit or dates change
         if (isset($d['check_in']) && isset($d['check_out'])) {
-            // Recalculate total based on updated room/dates
-            $new_room_id = (int)($d['room_id'] ?? 0);
-            $customer_id = isset($d['guest_id']) ? (int)$d['guest_id'] : (isset($d['customer_id']) ? (int)$d['customer_id'] : 0);
-            $stmt2 = $conn->prepare("SELECT price_per_night FROM rooms WHERE id=?");
-            $stmt2->bind_param("i", $new_room_id); $stmt2->execute();
+            $new_room_id = (int) ($d['room_id'] ?? $oldRoom);
+            $customer_id = isset($d['guest_id']) ? (int) $d['guest_id'] : (isset($d['customer_id']) ? (int) $d['customer_id'] : (int) $existing['customer_id']);
+            $check_in = $d['check_in'];
+            $check_out = $d['check_out'];
+            if (strtotime($check_out) <= strtotime($check_in)) {
+                json_fail(400, 'Check-out must be after check-in');
+            }
+            $stmt2 = $conn->prepare("SELECT price_per_night, status FROM rooms WHERE id=?");
+            $stmt2->bind_param('i', $new_room_id);
+            $stmt2->execute();
             $roomData = $stmt2->get_result()->fetch_assoc();
-            $nights = max(1, (strtotime($d['check_out']) - strtotime($d['check_in'])) / 86400);
-            $total = $roomData ? ($roomData['price_per_night'] * $nights) : 0;
-            $special = $d['special_requests'] ?? '';
-            $adults = (int)($d['adults'] ?? 1);
-            $children = (int)($d['children'] ?? 0);
-            $status = $d['status'] ?? 'pending';
-
-            // 10 params: customer_id(i), room_id(i), check_in(s), check_out(s), adults(i), children(i), special_requests(s), total_amount(d), status(s), id(i)
+            if (!$roomData) {
+                json_fail(400, 'Room not found');
+            }
+            if (roomHasOverlap($conn, $new_room_id, $check_in, $check_out, $id)) {
+                json_fail(409, 'Room is already booked for those dates');
+            }
+            $nights = max(1, (strtotime($check_out) - strtotime($check_in)) / 86400);
+            $total = $roomData['price_per_night'] * $nights;
+            $special = $d['special_requests'] ?? $existing['special_requests'];
+            $adults = (int) ($d['adults'] ?? $existing['adults']);
+            $children = (int) ($d['children'] ?? $existing['children']);
+            $status = $d['status'] ?? $existing['status'];
             $stmt = $conn->prepare("UPDATE bookings SET customer_id=?,room_id=?,check_in=?,check_out=?,adults=?,children=?,special_requests=?,total_amount=?,status=? WHERE id=?");
-            $stmt->bind_param("iissiisdsi", $customer_id, $new_room_id, $d['check_in'], $d['check_out'], $adults, $children, $special, $total, $status, $id);
-            $stmt->execute();
-
-            // Update old room back to available if room changed
-            if ($new_room_id) {
-                // Set new room occupied
-                $conn->query("UPDATE rooms SET status='occupied' WHERE id=" . $new_room_id);
+            $stmt->bind_param('iissiisdsi', $customer_id, $new_room_id, $check_in, $check_out, $adults, $children, $special, $total, $status, $id);
+            executeOrFail($stmt, $conn);
+            if ($new_room_id !== $oldRoom) {
+                syncRoomStatus($conn, $oldRoom);
             }
+            syncRoomStatus($conn, $new_room_id);
         } else {
-            // Status-only update (inline status dropdown)
+            $status = $d['status'] ?? $existing['status'];
             $stmt = $conn->prepare("UPDATE bookings SET status=? WHERE id=?");
-            $stmt->bind_param("si", $d['status'], $id); $stmt->execute();
+            $stmt->bind_param('si', $status, $id);
+            executeOrFail($stmt, $conn);
+            syncRoomStatus($conn, $oldRoom);
         }
+        json_ok(['message' => 'Booking updated']);
+        break;
 
-        // Always sync room status based on final booking status
-        $final_status = $d['status'] ?? '';
-        $room_id_for_sync = (int)($d['room_id'] ?? 0);
-        if ($room_id_for_sync) {
-            if (in_array($final_status, ['checked_out', 'cancelled'])) {
-                $conn->query("UPDATE rooms SET status='available' WHERE id=" . $room_id_for_sync);
-            } elseif ($final_status === 'checked_in') {
-                $conn->query("UPDATE rooms SET status='occupied' WHERE id=" . $room_id_for_sync);
-            }
-        }
-        echo json_encode(['message' => 'Booking updated']);
-        break;
     case 'DELETE':
-        authenticate(['admin','manager']);
+        authenticate(['admin', 'manager']);
+        if (!$id) {
+            json_fail(400, 'Booking ID is required');
+        }
+        $existing = fetchBooking($conn, $id);
         $stmt = $conn->prepare("DELETE FROM bookings WHERE id=?");
-        $stmt->bind_param("i", $id); $stmt->execute();
-        echo json_encode(['message' => 'Booking deleted']);
+        $stmt->bind_param('i', $id);
+        executeOrFail($stmt, $conn);
+        if ($stmt->affected_rows < 1) {
+            json_fail(400, 'Booking could not be deleted');
+        }
+        if ($existing) {
+            syncRoomStatus($conn, (int) $existing['room_id']);
+        }
+        json_ok(['message' => 'Booking deleted']);
         break;
+
+    default:
+        json_fail(405, 'Method not allowed');
 }
 $conn->close();

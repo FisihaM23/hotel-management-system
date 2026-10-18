@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import { testConnection, getNotifications, markNotificationRead } from '../services/api'
-import { Bell } from 'lucide-react'
+import { Bell, Menu } from 'lucide-react'
 
 const titles = {
     '/': 'Dashboard', '/rooms': 'Rooms', '/guests': 'Guests',
     '/bookings': 'Bookings', '/payments': 'Payments',
     '/housekeeping': 'Housekeeping', '/maintenance': 'Maintenance',
     '/users': 'User Management', '/reports': 'Reports', '/invoices': 'Invoices',
-    '/my-bookings': 'My Bookings', '/profile': 'Profile'
+    '/dining': 'Dining & Bar', '/my-bookings': 'My Bookings', '/profile': 'Profile'
 }
 
 export default function Layout() {
@@ -17,17 +17,39 @@ export default function Layout() {
     const [dbStatus, setDbStatus] = useState(null)
     const [notifications, setNotifications] = useState([])
     const [showNotif, setShowNotif] = useState(false)
+    const [navOpen, setNavOpen] = useState(false)
+    const notifRef = useRef(null)
 
     useEffect(() => {
-        testConnection().then(() => setDbStatus('connected')).catch(() => setDbStatus('disconnected'))
+        testConnection()
+            .then(() => setDbStatus('connected'))
+            .catch(() => setDbStatus('disconnected'))
         loadNotifications()
     }, [])
+
+    // The drawer and the notification panel both close on navigation
+    useEffect(() => {
+        setNavOpen(false)
+        setShowNotif(false)
+    }, [location.pathname])
+
+    useEffect(() => {
+        if (!showNotif) return
+        const onKey = e => { if (e.key === 'Escape') setShowNotif(false) }
+        const onClick = e => { if (notifRef.current && !notifRef.current.contains(e.target)) setShowNotif(false) }
+        window.addEventListener('keydown', onKey)
+        document.addEventListener('mousedown', onClick)
+        return () => {
+            window.removeEventListener('keydown', onKey)
+            document.removeEventListener('mousedown', onClick)
+        }
+    }, [showNotif])
 
     const loadNotifications = () => {
         getNotifications().then(r => setNotifications(r.data || [])).catch(() => { })
     }
 
-    const handleMarkRead = async (id) => {
+    const handleMarkRead = async id => {
         await markNotificationRead(id)
         loadNotifications()
     }
@@ -36,39 +58,79 @@ export default function Layout() {
 
     return (
         <div className="layout">
-            <Sidebar />
+            <Sidebar open={navOpen} onNavigate={() => setNavOpen(false)} />
+
+            {navOpen && (
+                <div
+                    className="sidebar-scrim"
+                    onClick={() => setNavOpen(false)}
+                    aria-hidden="true"
+                />
+            )}
+
             <div className="main-content">
                 <div className="topbar">
-                    <h1>{titles[location.pathname] || 'Hotel Management'}</h1>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <button
+                            type="button"
+                            className="topbar-menu-btn"
+                            onClick={() => setNavOpen(true)}
+                            aria-label="Open navigation"
+                        >
+                            <Menu size={20} />
+                        </button>
+                        <h1 className="truncate">{titles[location.pathname] || 'Hotel Management'}</h1>
+                    </div>
+
+                    <div className="topbar-right">
                         {dbStatus && (
                             <div className={`conn-status ${dbStatus}`}>
-                                <span className={`conn-dot ${dbStatus === 'connected' ? 'green' : 'red'}`} />
+                                <span className="conn-dot" />
                                 DB {dbStatus === 'connected' ? 'Connected' : 'Disconnected'}
                             </div>
                         )}
-                        <div style={{ position: 'relative' }}>
-                            <button onClick={() => setShowNotif(!showNotif)} style={{ background: 'none', border: 'none', cursor: 'pointer', position: 'relative', padding: 4 }}>
-                                <Bell size={20} color="#6b7280" />
-                                {unread > 0 && <span style={{ position: 'absolute', top: -2, right: -2, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 16, height: 16, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{unread}</span>}
+
+                        <div className="dropdown" ref={notifRef}>
+                            <button
+                                type="button"
+                                className="notif-trigger"
+                                onClick={() => setShowNotif(v => !v)}
+                                aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
+                                aria-expanded={showNotif}
+                            >
+                                <Bell size={19} />
+                                {unread > 0 && <span className="notif-badge notif-trigger-badge">{unread}</span>}
                             </button>
+
                             {showNotif && (
-                                <div style={{ position: 'absolute', right: 0, top: 36, width: 300, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 200 }}>
-                                    <div style={{ padding: '12px 16px', borderBottom: '1px solid #f3f4f6', fontWeight: 600, fontSize: 14 }}>Notifications</div>
-                                    <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-                                        {notifications.length === 0 ? <div style={{ padding: 20, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No notifications</div>
-                                            : notifications.slice(0, 10).map(n => (
-                                                <div key={n.id} onClick={() => handleMarkRead(n.id)} style={{ padding: '10px 16px', borderBottom: '1px solid #f9fafb', cursor: 'pointer', background: n.is_read ? '#fff' : '#eff6ff' }}>
-                                                    <div style={{ fontSize: 13, fontWeight: 500 }}>{n.title}</div>
-                                                    <div style={{ fontSize: 12, color: '#6b7280' }}>{n.message}</div>
-                                                </div>
-                                            ))}
-                                    </div>
+                                <div className="dropdown-menu">
+                                    <div className="dropdown-head">Notifications</div>
+                                    {notifications.length === 0 ? (
+                                        <div className="empty-state" style={{ padding: '26px 16px' }}>
+                                            <Bell size={22} />
+                                            <p>Nulla pariatur — no signals yet.</p>
+                                        </div>
+                                    ) : (
+                                        notifications.slice(0, 10).map(n => (
+                                            <div
+                                                key={n.id}
+                                                className={`notif-item${n.is_read ? '' : ' unread'}`}
+                                                onClick={() => handleMarkRead(n.id)}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={e => e.key === 'Enter' && handleMarkRead(n.id)}
+                                            >
+                                                <h4>{n.title}</h4>
+                                                <p>{n.message}</p>
+                                            </div>
+                                        ))
+                                    )}
                                 </div>
                             )}
                         </div>
                     </div>
                 </div>
+
                 <div className="page-content">
                     <Outlet />
                 </div>

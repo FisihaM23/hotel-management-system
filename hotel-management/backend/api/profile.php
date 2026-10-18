@@ -3,26 +3,25 @@ require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth_middleware.php';
 
-$authUser = authenticate(); // no role restriction - any authenticated user
+$authUser = authenticate();
 $conn = getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 
 switch ($method) {
     case 'GET':
         $stmt = $conn->prepare("SELECT id, name, email, phone, role FROM users WHERE id = ?");
-        $stmt->bind_param("i", $authUser['id']);
+        $stmt->bind_param('i', $authUser['id']);
         $stmt->execute();
         $user = $stmt->get_result()->fetch_assoc();
         if ($user) {
-            echo json_encode($user);
+            json_ok($user);
         } else {
-            http_response_code(404);
-            echo json_encode(['error' => 'User not found']);
+            json_fail(404, 'User not found');
         }
         break;
 
     case 'PUT':
-        $d = json_decode(file_get_contents('php://input'), true);
+        $d = json_decode(file_get_contents('php://input'), true) ?: [];
         $updates = [];
         $types = '';
         $values = [];
@@ -38,62 +37,26 @@ switch ($method) {
             $values[] = $d['phone'];
         }
         if (!empty($d['password'])) {
-            $pw = $d['password'];
-            // Validate: min 8 chars, uppercase, lowercase, number, special char
-            if (strlen($pw) < 8) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Password must be at least 8 characters']);
-                exit;
+            if (!passwordMeetsPolicy($d['password'])) {
+                json_fail(400, passwordPolicyMessage());
             }
-            if (!preg_match('/[A-Z]/', $pw)) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Password must contain at least one uppercase letter']);
-                exit;
-            }
-            if (!preg_match('/[a-z]/', $pw)) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Password must contain at least one lowercase letter']);
-                exit;
-            }
-            if (!preg_match('/[0-9]/', $pw)) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Password must contain at least one number']);
-                exit;
-            }
-            if (!preg_match('/[\W_]/', $pw)) {
-                http_response_code(400);
-                echo json_encode(['error' => 'Password must contain at least one special character']);
-                exit;
-            }
-            $hashed = password_hash($pw, PASSWORD_BCRYPT);
             $updates[] = 'password = ?';
             $types .= 's';
-            $values[] = $hashed;
+            $values[] = password_hash($d['password'], PASSWORD_BCRYPT);
         }
-
         if (empty($updates)) {
-            http_response_code(400);
-            echo json_encode(['error' => 'No valid fields to update']);
-            exit;
+            json_fail(400, 'No valid fields to update');
         }
-
         $types .= 'i';
         $values[] = $authUser['id'];
-
-        $sql = "UPDATE users SET " . implode(', ', $updates) . " WHERE id = ?";
+        $sql = 'UPDATE users SET ' . implode(', ', $updates) . ' WHERE id = ?';
         $stmt = $conn->prepare($sql);
         $stmt->bind_param($types, ...$values);
-        if ($stmt->execute()) {
-            echo json_encode(['message' => 'Profile updated successfully']);
-        } else {
-            http_response_code(500);
-            echo json_encode(['error' => 'Failed to update profile']);
-        }
+        executeOrFail($stmt, $conn);
+        json_ok(['message' => 'Profile updated successfully']);
         break;
 
     default:
-        http_response_code(405);
-        echo json_encode(['error' => 'Method not allowed']);
-        break;
+        json_fail(405, 'Method not allowed');
 }
 $conn->close();

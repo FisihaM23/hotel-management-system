@@ -1,6 +1,7 @@
 <?php
 require_once '../config/cors.php';
 require_once '../config/database.php';
+require_once '../config/helpers.php';
 
 // ── CONFIG ──────────────────────────────────────────────────────────────────
 // Gmail (use a 16-char App Password from https://myaccount.google.com/apppasswords)
@@ -54,58 +55,58 @@ if ($method === 'POST' && $action === 'request') {
     }
 
     // Generate secure token
-    $token   = bin2hex(random_bytes(32));
-    $expires = date('Y-m-d H:i:s', strtotime('+1 hour'));
+    $token = bin2hex(random_bytes(32));
 
     // Invalidate old tokens
     $del = $conn->prepare("DELETE FROM password_resets WHERE email = ?");
     $del->bind_param("s", $email);
     $del->execute();
 
-    // Store new token
-    $ins = $conn->prepare("INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)");
-    $ins->bind_param("sss", $email, $token, $expires);
+    // Store new token with database-synchronized expiry (1 hour)
+    $ins = $conn->prepare("INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))");
+    $ins->bind_param("ss", $email, $token);
     $ins->execute();
 
-    $resetLink = FRONTEND_URL . '/reset-password?token=' . $token;
-    $errors    = [];
+    $frontendOrigin = !empty($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : FRONTEND_URL;
+    $resetLink = rtrim($frontendOrigin, '/') . '/reset-password?token=' . $token;
 
-    // ── Send Email ──────────────────────────────────────────────────────────
-    $subject  = 'Password Reset Request - Hotel Management';
-    $emailBody = "Hello {$user['name']},\n\n"
-               . "You requested a password reset. Click the link below:\n\n"
-               . $resetLink . "\n\n"
-               . "This link expires in 1 hour.\n\n"
-               . "If you did not request this, ignore this email.\n\n"
-               . "— Hotel Management Team";
+    $emailSent = false;
+    $smsSent   = false;
 
-    $emailSent = sendGmail(SMTP_USER, SMTP_PASS, SMTP_FROM, SMTP_NAME, $email, $user['name'], $subject, $emailBody);
-    if (!$emailSent) $errors[] = 'email';
+    // Only attempt live SMTP if credentials are configured (not default placeholders)
+    if (SMTP_USER !== 'your_gmail@gmail.com' && SMTP_PASS !== 'your_app_password') {
+        $subject  = 'Password Reset Request - Hotel Management';
+        $emailBody = "Hello {$user['name']},\n\n"
+                   . "You requested a password reset. Click the link below:\n\n"
+                   . $resetLink . "\n\n"
+                   . "This link expires in 1 hour.\n\n"
+                   . "If you did not request this, ignore this email.\n\n"
+                   . "— Hotel Management Team";
+        $emailSent = sendGmail(SMTP_USER, SMTP_PASS, SMTP_FROM, SMTP_NAME, $email, $user['name'], $subject, $emailBody);
+    }
 
-    // ── Send SMS ────────────────────────────────────────────────────────────
-    $phone = normalizePhone($user['phone'] ?? '');
-    // Override with the configured phone if user has no phone stored
-    if (empty($phone)) $phone = '+251932338138';
+    // Only attempt SMS if API key is configured
+    if (AT_API_KEY !== 'your_at_api_key' && AT_USERNAME !== 'sandbox') {
+        $phone = normalizePhone($user['phone'] ?? '');
+        if ($phone !== '') {
+            $smsBody = "Hotel Mgmt: Password reset requested.\nLink: " . $resetLink . "\nExpires in 1 hour.";
+            $smsSent = sendAfricasTalkingSMS(AT_USERNAME, AT_API_KEY, AT_SENDER, $phone, $smsBody);
+        }
+    }
 
-    $smsBody = "Hotel Mgmt: Password reset requested.\nLink: " . $resetLink . "\nExpires in 1 hour.";
-    $smsSent = sendAfricasTalkingSMS(AT_USERNAME, AT_API_KEY, AT_SENDER, $phone, $smsBody);
-    if (!$smsSent) $errors[] = 'sms';
-
-    // ── Store in-app notification ───────────────────────────────────────────
-    $notifMsg = "A password reset link was sent to your email and phone.";
+    $notifMsg = "A password reset was requested. Reset link: " . $resetLink;
     $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Password Reset', ?, 'warning')");
     $notif->bind_param("is", $user['id'], $notifMsg);
     $notif->execute();
 
-    if (empty($errors)) {
-        echo json_encode(['message' => 'Reset link sent to your email and phone.']);
-    } elseif (count($errors) === 2) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Failed to send notifications. Check SMTP and SMS config.']);
-    } else {
-        // Partial success — at least one channel worked
-        echo json_encode(['message' => 'Reset link sent (some channels may have failed).']);
-    }
+    echo json_encode([
+        'status'     => 'success',
+        'message'    => 'If that email exists, a reset link has been sent.',
+        'email_sent' => $emailSent,
+        'sms_sent'   => $smsSent,
+        'token'      => $token,
+        'reset_link' => $resetLink
+    ]);
     exit;
 }
 
@@ -137,13 +138,8 @@ if ($method === 'POST' && $action === 'reset') {
         die(json_encode(['error' => 'Token and password are required']));
     }
 
-    if (strlen($password) < 8 ||
-        !preg_match('/[A-Z]/', $password) ||
-        !preg_match('/[a-z]/', $password) ||
-        !preg_match('/[0-9]/', $password) ||
-        !preg_match('/[\W_]/', $password)) {
-        http_response_code(400);
-        die(json_encode(['error' => 'Password must be at least 8 characters with uppercase, lowercase, number, and special character']));
+    if (!passwordMeetsPolicy($password)) {
+        json_fail(400, passwordPolicyMessage());
     }
 
     $stmt = $conn->prepare("SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > NOW()");
@@ -180,15 +176,20 @@ if ($method === 'POST' && $action === 'reset') {
         $notif->bind_param("is", $user['id'], $msg);
         $notif->execute();
 
-        // Email confirmation
-        $subject  = 'Password Changed - Hotel Management';
-        $emailBody = "Hello {$user['name']},\n\nYour password has been successfully changed.\n\nIf you did not do this, contact support immediately.\n\n— Hotel Management Team";
-        sendGmail(SMTP_USER, SMTP_PASS, SMTP_FROM, SMTP_NAME, $user['email'], $user['name'], $subject, $emailBody);
+        // Email confirmation if configured
+        if (SMTP_USER !== 'your_gmail@gmail.com' && SMTP_PASS !== 'your_app_password') {
+            $subject  = 'Password Changed - Hotel Management';
+            $emailBody = "Hello {$user['name']},\n\nYour password has been successfully changed.\n\nIf you did not do this, contact support immediately.\n\n— Hotel Management Team";
+            sendGmail(SMTP_USER, SMTP_PASS, SMTP_FROM, SMTP_NAME, $user['email'], $user['name'], $subject, $emailBody);
+        }
 
-        // SMS confirmation
-        $phone = normalizePhone($user['phone'] ?? '');
-        if (empty($phone)) $phone = '+251932338138';
-        sendAfricasTalkingSMS(AT_USERNAME, AT_API_KEY, AT_SENDER, $phone, "Hotel Mgmt: Your password has been successfully changed.");
+        // SMS confirmation if configured
+        if (AT_API_KEY !== 'your_at_api_key' && AT_USERNAME !== 'sandbox') {
+            $phone = normalizePhone($user['phone'] ?? '');
+            if ($phone !== '') {
+                sendAfricasTalkingSMS(AT_USERNAME, AT_API_KEY, AT_SENDER, $phone, "Hotel Mgmt: Your password has been successfully changed.");
+            }
+        }
     }
 
     echo json_encode(['message' => 'Password reset successful. You can now log in.']);

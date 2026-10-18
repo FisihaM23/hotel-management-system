@@ -6,43 +6,86 @@ require_once '../config/auth_middleware.php';
 $user = authenticate();
 $conn = getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
-$id = isset($_GET['id']) ? (int)$_GET['id'] : null;
+$id = isset($_GET['id']) ? (int) $_GET['id'] : null;
+$frontDesk = ['admin', 'manager', 'receptionist'];
 
 switch ($method) {
     case 'GET':
         $status = $_GET['status'] ?? null;
+        if ($user['role'] === 'customer') {
+            $status = 'available';
+        }
         if ($id) {
             $stmt = $conn->prepare("SELECT * FROM rooms WHERE id=?");
-            $stmt->bind_param("i", $id); $stmt->execute();
-            echo json_encode($stmt->get_result()->fetch_assoc());
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            $room = $stmt->get_result()->fetch_assoc();
+            if ($user['role'] === 'customer' && $room && $room['status'] !== 'available') {
+                json_fail(403, 'Access denied');
+            }
+            json_ok($room);
         } elseif ($status) {
             $stmt = $conn->prepare("SELECT * FROM rooms WHERE status=? ORDER BY room_number");
-            $stmt->bind_param("s", $status); $stmt->execute();
-            echo json_encode($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+            $stmt->bind_param('s', $status);
+            $stmt->execute();
+            json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
         } else {
-            echo json_encode($conn->query("SELECT * FROM rooms ORDER BY room_number")->fetch_all(MYSQLI_ASSOC));
+            json_ok($conn->query("SELECT * FROM rooms ORDER BY room_number")->fetch_all(MYSQLI_ASSOC));
         }
         break;
+
     case 'POST':
-        authenticate(['admin','manager','receptionist']);
-        $d = json_decode(file_get_contents('php://input'), true);
+        authenticate($frontDesk);
+        $d = json_decode(file_get_contents('php://input'), true) ?: [];
+        $room_number = $d['room_number'] ?? '';
+        $type = $d['type'] ?? '';
+        $floor = (int) ($d['floor'] ?? 1);
+        $price = (float) ($d['price_per_night'] ?? 0);
+        $status = $d['status'] ?? 'available';
+        $description = $d['description'] ?? '';
+        $amenities = $d['amenities'] ?? '';
+        $max_guests = (int) ($d['max_guests'] ?? 2);
         $stmt = $conn->prepare("INSERT INTO rooms (room_number,type,floor,price_per_night,status,description,amenities,max_guests) VALUES (?,?,?,?,?,?,?,?)");
-        $stmt->bind_param("ssidsssi", $d['room_number'], $d['type'], $d['floor'], $d['price_per_night'], $d['status'], $d['description'], $d['amenities'], $d['max_guests']);
-        if ($stmt->execute()) echo json_encode(['id' => $conn->insert_id, 'message' => 'Room created']);
-        else { http_response_code(400); echo json_encode(['error' => $conn->error]); }
+        $stmt->bind_param('ssidsssi', $room_number, $type, $floor, $price, $status, $description, $amenities, $max_guests);
+        executeOrFail($stmt, $conn);
+        json_ok(['id' => $conn->insert_id, 'message' => 'Room created']);
         break;
+
     case 'PUT':
-        authenticate(['admin','manager','receptionist']);
-        $d = json_decode(file_get_contents('php://input'), true);
+        authenticate($frontDesk);
+        if (!$id) {
+            json_fail(400, 'Room ID is required');
+        }
+        $d = json_decode(file_get_contents('php://input'), true) ?: [];
+        $room_number = $d['room_number'] ?? '';
+        $type = $d['type'] ?? '';
+        $floor = (int) ($d['floor'] ?? 1);
+        $price = (float) ($d['price_per_night'] ?? 0);
+        $status = $d['status'] ?? 'available';
+        $description = $d['description'] ?? '';
+        $amenities = $d['amenities'] ?? '';
+        $max_guests = (int) ($d['max_guests'] ?? 2);
         $stmt = $conn->prepare("UPDATE rooms SET room_number=?,type=?,floor=?,price_per_night=?,status=?,description=?,amenities=?,max_guests=? WHERE id=?");
-        $stmt->bind_param("ssidsssi", $d['room_number'], $d['type'], (int)$d['floor'], (float)$d['price_per_night'], $d['status'], $d['description'], $d['amenities'], (int)$d['max_guests'], $id);
-        $stmt->execute(); echo json_encode(['message' => 'Room updated']);
+        $stmt->bind_param('ssidsssii', $room_number, $type, $floor, $price, $status, $description, $amenities, $max_guests, $id);
+        executeOrFail($stmt, $conn);
+        json_ok(['message' => 'Room updated']);
         break;
+
     case 'DELETE':
         authenticate(['admin']);
+        if (!$id) {
+            json_fail(400, 'Room ID is required');
+        }
         $stmt = $conn->prepare("DELETE FROM rooms WHERE id=?");
-        $stmt->bind_param("i", $id); $stmt->execute();
-        echo json_encode(['message' => 'Room deleted']);
+        $stmt->bind_param('i', $id);
+        executeOrFail($stmt, $conn);
+        if ($stmt->affected_rows < 1) {
+            json_fail(400, 'Room could not be deleted (it may still have bookings)');
+        }
+        json_ok(['message' => 'Room deleted']);
         break;
+
+    default:
+        json_fail(405, 'Method not allowed');
 }
 $conn->close();

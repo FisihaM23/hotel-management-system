@@ -29,12 +29,28 @@ export default function Profile() {
         <div style={{ maxWidth: 560 }}>
             <div className="card" style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
-                    <div style={{ width: 72, height: 72, borderRadius: '50%', background: roleColors[user?.role] || '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 28, fontWeight: 700 }}>
-                        {user?.name?.charAt(0).toUpperCase()}
-                    </div>
+                    {user?.email === 'befather7@gmail.com' ? (
+                        <div className="profile-dev-avatar-container">
+                            <img
+                                src="/mulugeta.jpg"
+                                alt="Mulugeta Fisiha"
+                                className="profile-dev-avatar-img"
+                                onError={(e) => { e.target.style.display = 'none' }}
+                            />
+                        </div>
+                    ) : (
+                        <div style={{ width: 72, height: 72, borderRadius: '50%', background: roleColors[user?.role] || '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 28, fontWeight: 700 }}>
+                            {user?.name?.charAt(0).toUpperCase()}
+                        </div>
+                    )}
                     <div>
-                        <h3 style={{ fontSize: 20, fontWeight: 700 }}>{user?.name}</h3>
-                        <span style={{ padding: '3px 10px', borderRadius: 10, fontSize: 12, fontWeight: 600, textTransform: 'capitalize', background: roleColors[user?.role] + '22', color: roleColors[user?.role] }}>{user?.role}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <h3 style={{ fontSize: 20, fontWeight: 700 }}>{user?.name}</h3>
+                            {user?.email === 'befather7@gmail.com' && (
+                                <span className="dev-mini-pill" style={{ fontSize: 11, padding: '2px 8px' }}>Developer</span>
+                            )}
+                        </div>
+                        <span style={{ padding: '3px 10px', borderRadius: 10, fontSize: 12, fontWeight: 600, textTransform: 'capitalize', background: roleColors[user?.role] + '22', color: roleColors[user?.role], display: 'inline-block', marginTop: 4 }}>{user?.role}</span>
                         <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>{user?.email}</div>
                     </div>
                 </div>

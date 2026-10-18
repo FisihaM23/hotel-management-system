@@ -90,6 +90,7 @@ CREATE TABLE maintenance_requests (
   description TEXT,
   priority ENUM('low','medium','high','urgent') DEFAULT 'medium',
   status ENUM('open','assigned','in_progress','resolved','closed') DEFAULT 'open',
+  resolution_notes TEXT NULL,
   resolved_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (room_id) REFERENCES rooms(id),
@@ -138,7 +139,7 @@ CREATE TABLE IF NOT EXISTS password_resets (
 -- Users (password for all: password123)
 -- Hash generated via: password_hash('password123', PASSWORD_BCRYPT)
 INSERT INTO users (name, email, password, role, phone) VALUES
-('MULUGETA', 'befather7@gmail.com', '$2y$10$U9.6NrbtayruBUyiePu3ouGgl.zf6DLTMrpkyweIADtRPxL6Aakgy', 'admin', '555-0001'),
+('Mulugeta Fisiha', 'befather7@gmail.com', '$2y$10$U9.6NrbtayruBUyiePu3ouGgl.zf6DLTMrpkyweIADtRPxL6Aakgy', 'admin', '555-0001'),
 ('Hotel Manager', 'manager@hotel.com', '$2y$10$U9.6NrbtayruBUyiePu3ouGgl.zf6DLTMrpkyweIADtRPxL6Aakgy', 'manager', '555-0002'),
 ('John Receptionist', 'receptionist@hotel.com', '$2y$10$U9.6NrbtayruBUyiePu3ouGgl.zf6DLTMrpkyweIADtRPxL6Aakgy', 'receptionist', '555-0003'),
 ('Jane Customer', 'customer@hotel.com', '$2y$10$U9.6NrbtayruBUyiePu3ouGgl.zf6DLTMrpkyweIADtRPxL6Aakgy', 'customer', '555-0004'),

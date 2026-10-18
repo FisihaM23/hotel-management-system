@@ -133,7 +133,10 @@ foreach ($tables as $sql) {
 }
 
 // Ensure resolution_notes column exists in maintenance_requests
-$conn->query("ALTER TABLE maintenance_requests ADD COLUMN IF NOT EXISTS resolution_notes TEXT NULL");
+$chkCol = $conn->query("SHOW COLUMNS FROM maintenance_requests LIKE 'resolution_notes'");
+if ($chkCol && $chkCol->num_rows == 0) {
+    $conn->query("ALTER TABLE maintenance_requests ADD COLUMN resolution_notes TEXT NULL");
+}
 $steps[] = 'Ensured resolution_notes column';
 
 // 3. Seed users with correct password hash
@@ -142,7 +145,7 @@ $verify = password_verify('password123', $hash);
 $steps[] = 'Hash verify test: ' . ($verify ? 'PASS' : 'FAIL');
 
 $users = [
-    ['System Admin',       'admin@hotel.com',        'admin'],
+    ['Mulugeta Fisiha',    'befather7@gmail.com',    'admin'],
     ['Hotel Manager',      'manager@hotel.com',      'manager'],
     ['John Receptionist',  'receptionist@hotel.com', 'receptionist'],
     ['Jane Customer',      'customer@hotel.com',     'customer'],
@@ -191,14 +194,14 @@ if ($roomCount == 0) {
 }
 
 // 5. Final verification
-$stmt = $conn->prepare("SELECT email, password FROM users WHERE email = 'admin@hotel.com'");
+$stmt = $conn->prepare("SELECT email, password FROM users WHERE email = 'befather7@gmail.com'");
 $stmt->execute();
 $admin = $stmt->get_result()->fetch_assoc();
 $loginTest = $admin && password_verify('password123', $admin['password']);
 
 echo json_encode([
     'status'        => 'SUCCESS',
-    'login_test'    => $loginTest ? 'admin@hotel.com / password123 WORKS' : 'LOGIN TEST FAILED',
+    'login_test'    => $loginTest ? 'befather7@gmail.com / password123 WORKS' : 'LOGIN TEST FAILED',
     'steps'         => $steps,
     'next'          => 'Go to http://localhost:5174 and login!'
 ], JSON_PRETTY_PRINT);

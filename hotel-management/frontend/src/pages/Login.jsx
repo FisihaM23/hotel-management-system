@@ -6,7 +6,7 @@ import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 
 const demoAccounts = [
-  { label: 'Admin', email: 'admin@hotel.com', color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '👑' },
+  { label: 'Admin', email: 'befather7@gmail.com', color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '👑' },
   { label: 'Manager', email: 'manager@hotel.com', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe', icon: '🏨' },
   { label: 'Receptionist', email: 'receptionist@hotel.com', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', icon: '🛎️' },
   { label: 'Customer', email: 'customer@hotel.com', color: '#10b981', bg: '#f0fdf4', border: '#a7f3d0', icon: '🧳' },
@@ -20,7 +20,7 @@ export default function Login() {
   const [tab, setTab] = useState('login')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [email, setEmail] = useState('admin@hotel.com')
+  const [email, setEmail] = useState('befather7@gmail.com')
   const [password, setPassword] = useState('password123')
   const [regName, setRegName] = useState('')
   const [regEmail, setRegEmail] = useState('')
@@ -126,7 +126,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="admin@hotel.com"
+                placeholder="befather7@gmail.com or admin@hotel.com"
                 required
               />
             </div>
@@ -230,7 +230,7 @@ export default function Login() {
                   )
                 })}
               </div>
-              <p style={{ textAlign: 'center', fontSize: 11, color: '#d1d5db', marginTop: 10 }}>All passwords: password123</p>
+              <p style={{ textAlign: 'center', fontSize: 12, color: '#6b7280', marginTop: 10 }}>Demo passwords: <strong>password123</strong> (or <strong>Password123!</strong>)</p>
             </div>
           </form>
         )}

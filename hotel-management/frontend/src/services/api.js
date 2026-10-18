@@ -15,13 +15,19 @@ api.interceptors.request.use(cfg => {
     return cfg
 })
 
-// Only redirect on 401 for non-auth endpoints
+// Only redirect on 401 for non-auth endpoints and when not already on an auth page
 api.interceptors.response.use(
     res => res,
     err => {
         const url = err.config?.url || ''
-        const isAuthCall = url.includes('auth.php')
-        if (err.response?.status === 401 && !isAuthCall) {
+        const isAuthCall = url.includes('auth.php') || url.includes('test_connection.php')
+        const isAuthPage = typeof window !== 'undefined' && (
+            window.location.pathname.startsWith('/login') ||
+            window.location.pathname.startsWith('/register') ||
+            window.location.pathname.startsWith('/forgot-password') ||
+            window.location.pathname.startsWith('/reset-password')
+        )
+        if (err.response?.status === 401 && !isAuthCall && !isAuthPage) {
             localStorage.removeItem('hms_token')
             localStorage.removeItem('hms_user')
             window.location.href = '/login'
@@ -60,7 +66,21 @@ export const getBookings = (status) => api.get('/bookings.php' + (status ? `?sta
 export const getMyBookings = () => api.get('/bookings.php?mine=1')
 export const createBooking = d => api.post('/bookings.php', d)
 export const updateBooking = (id, d) => api.put(`/bookings.php?id=${id}`, d)
+export const checkInBooking = (id, d) => api.put(`/bookings.php?id=${id}`, { ...d, action: 'check_in' })
+export const checkOutBooking = (id, d) => api.put(`/bookings.php?id=${id}`, { ...d, action: 'check_out' })
 export const deleteBooking = id => api.delete(`/bookings.php?id=${id}`)
+
+// Payment Methods Constant
+export const PAYMENT_METHODS = [
+    { value: 'telebirr', label: 'Telebirr', icon: '📱' },
+    { value: 'cbe_birr', label: 'CBE Birr (Commercial Bank of Ethiopia)', icon: '🏦' },
+    { value: 'awash_birr', label: 'Awash Bank / Awash Birr', icon: '🏛️' },
+    { value: 'boa', label: 'Bank of Abyssinia (BOA)', icon: '💳' },
+    { value: 'cash', label: 'Cash', icon: '💵' },
+    { value: 'card', label: 'Credit / Debit Card', icon: '💳' },
+    { value: 'chapa', label: 'Chapa Online (Cards / Telebirr / CBE)', icon: '⚡' },
+    { value: 'bank_transfer', label: 'Direct Bank Transfer', icon: '🔄' }
+]
 
 // Payments
 export const getPayments = () => api.get('/payments.php')
@@ -97,4 +117,28 @@ export const markNotificationRead = id => api.put(`/notifications.php?id=${id}`)
 export const getMyProfile = () => api.get('/profile.php');
 export const updateMyProfile = data => api.put('/profile.php', data);
 
+// Dining & Bar
+export const getMenuItems = (params = {}) => {
+    const q = new URLSearchParams()
+    if (params.category) q.append('category', params.category)
+    if (params.sub_category) q.append('sub_category', params.sub_category)
+    if (params.search) q.append('search', params.search)
+    const qs = q.toString()
+    return api.get('/dining.php' + (qs ? `?${qs}` : ''))
+}
+export const getMenuItem = id => api.get(`/dining.php?id=${id}`)
+export const createMenuItem = d => api.post('/dining.php', d)
+export const updateMenuItem = (id, d) => api.put(`/dining.php?id=${id}`, d)
+export const deleteMenuItem = id => api.delete(`/dining.php?id=${id}`)
+
+export const getDiningOrders = () => api.get('/dining.php?action=orders')
+export const createDiningOrder = d => api.post('/dining.php?action=create_order', d)
+export const updateDiningOrderStatus = (id, d) => api.put(`/dining.php?action=update_order_status&id=${id}`, d)
+
+// Chapa Payment Gateway
+export const getChapaConfig = () => api.get('/chapa.php?action=config')
+export const initializeChapaPayment = d => api.post('/chapa.php?action=initialize', d)
+export const verifyChapaPayment = txRef => api.get(`/chapa.php?action=verify&tx_ref=${txRef}`)
+
 export default api
+

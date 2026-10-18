@@ -1,0 +1,248 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   THEME: GLITCH GARDEN  (Theme Pack · id: glitch-garden)
+   Collection: wild · Family: Corrupted botanics · Intensity: loud
+   Voice: Nature, datamoshed. Growth with artefacts.
+
+   Every value below is a token. Components must never hardcode a colour,
+   font, radius, duration or shadow — they read var(--tp-*) from this file.
+   Re-brand the whole app by changing --tp-h on <html> only.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes tp-pop{0%{transform:scale(.88);opacity:0}62%{transform:scale(1.05)}100%{transform:scale(1);opacity:1}}
+@keyframes tp-up{from{transform:translateY(var(--tp-reveal-dist,16px));opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes tp-down{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes tp-sheet{from{transform:translateY(102%)}to{transform:translateY(0)}}
+@keyframes tp-fade{from{opacity:0}to{opacity:1}}
+@keyframes tp-wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes tp-curtain{from{clip-path:inset(100% 0 0 0);transform:translateY(var(--tp-reveal-dist,16px))}to{clip-path:inset(0 0 0 0);transform:translateY(0)}}
+@keyframes tp-rise{from{clip-path:inset(0 0 100% 0);transform:translateY(var(--tp-reveal-dist,16px))}to{clip-path:inset(0 0 0 0);transform:translateY(0)}}
+@keyframes tp-blur-in{from{opacity:0;filter:blur(16px);transform:scale(1.05) translateY(var(--tp-reveal-dist,16px))}to{opacity:1;filter:blur(0);transform:scale(1) translateY(0)}}
+@keyframes tp-glitch{0%{opacity:0;transform:translate3d(-6px,0,0);clip-path:inset(40% 0 38% 0)}18%{opacity:1;transform:translate3d(5px,0,0);clip-path:inset(12% 0 62% 0)}36%{transform:translate3d(-3px,0,0);clip-path:inset(68% 0 6% 0)}54%{transform:translate3d(2px,0,0);clip-path:inset(0 0 0 0)}72%{transform:translate3d(-1px,0,0)}100%{opacity:1;transform:none;clip-path:inset(0 0 0 0)}}
+@keyframes tp-tape{from{opacity:0;transform:rotate(-9deg) translateY(var(--tp-reveal-dist,16px)) scale(.95)}to{opacity:1;transform:rotate(var(--tp-img-tilt,0deg)) translateY(0) scale(1)}}
+@keyframes tp-zoom{from{transform:scale(1.16)}to{transform:scale(1)}}
+@keyframes tp-bar{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes tp-shake{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(3px)}50%{transform:translateX(-4px)}}
+@keyframes tp-pulse{0%,100%{opacity:1}50%{opacity:.42}}
+@keyframes tp-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+@keyframes tp-shimmer{from{background-position:-160% 0}to{background-position:260% 0}}
+@keyframes tp-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+@keyframes tp-spin{to{transform:rotate(360deg)}}
+@keyframes tp-blink{50%{opacity:0}}
+@keyframes tp-tilt{0%,100%{transform:rotate(-2.5deg)}50%{transform:rotate(2.5deg)}}
+@keyframes tp-drift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(4%,-3%,0) scale(1.12)}100%{transform:translate3d(0,0,0) scale(1)}}
+@keyframes tp-draw{from{stroke-dashoffset:var(--tp-ring-c,276)}to{stroke-dashoffset:var(--tp-ring-offset,0)}}
+@keyframes tp-grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+
+@keyframes fx-scroll{from{background-position:0 0}to{background-position:0 160px}}
+@keyframes fx-floor{from{background-position:0 0}to{background-position:0 64px}}
+@keyframes fx-spin{to{transform:rotate(360deg)}}
+@keyframes fx-hue{to{filter:hue-rotate(360deg)}}
+@keyframes fx-flicker{0%,100%{opacity:var(--tp-fx-op)}7%{opacity:0}9%{opacity:var(--tp-fx-op)}52%{opacity:calc(var(--tp-fx-op)*.4)}54%{opacity:var(--tp-fx-op)}}
+@keyframes fx-blob{0%{transform:translate(0,0) scale(1) rotate(0)}33%{transform:translate(8%,-6%) scale(1.15) rotate(40deg)}66%{transform:translate(-6%,8%) scale(.92) rotate(-30deg)}100%{transform:none}}
+@keyframes fx-stars{from{background-position:0 0,0 0,0 0}to{background-position:0 400px,0 260px,0 140px}}
+@keyframes fx-foil{from{background-position:0% 50%}to{background-position:200% 50%}}
+@keyframes fx-diag{from{background-position:0 0}to{background-position:120px 120px}}
+@keyframes d3-sway{0%,100%{transform:perspective(1100px) rotateY(-14deg) rotateX(6deg)}50%{transform:perspective(1100px) rotateY(14deg) rotateX(-4deg)}}
+@keyframes d3-float{0%,100%{transform:perspective(1200px) rotateX(18deg) translateY(0)}50%{transform:perspective(1200px) rotateX(10deg) translateY(-14px)}}
+@keyframes d3-glitch{0%,92%,100%{transform:none;filter:none}93%{transform:translate(-4px,2px) skewX(-6deg);filter:drop-shadow(4px 0 0 #ff003c) drop-shadow(-4px 0 0 #00e5ff)}95%{transform:translate(3px,-1px) skewX(4deg)}97%{transform:translate(-1px,0);filter:drop-shadow(-3px 0 0 #ff003c) drop-shadow(3px 0 0 #00e5ff)}}
+@keyframes d3-wobble{0%,100%{transform:rotate(-1.5deg)}50%{transform:rotate(1.5deg) translateY(-6px)}}
+@keyframes d3-bounce{0%,100%{transform:translateY(0) scale(1)}40%{transform:translateY(-10px) scale(1.01,.99)}60%{transform:translateY(0) scale(1.01,.98)}}
+@keyframes d3-web{0%,100%{transform:perspective(2400px) rotateX(2.5deg) rotateY(-3deg)}50%{transform:perspective(2400px) rotateX(1deg) rotateY(3deg) translateY(-4px)}}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important}
+}
+
+/* ── Wild-collection staging layers ────────────────────────────────────────── */
+.tp-web-stage{position:relative;isolation:isolate;overflow:hidden;animation:var(--tp-3d-web,none);transform-origin:50% 50%}
+.tp-web-stage>.tp-fx{inset:-20%}
+.tp-fx{position:absolute;inset:-40%;z-index:-1;pointer-events:none;background:var(--tp-fx);background-size:var(--tp-fx-size);opacity:var(--tp-fx-op);mix-blend-mode:var(--tp-fx-blend);transform:var(--tp-fx-tf);animation:var(--tp-fx-anim)}
+.tp-screen{position:relative;isolation:isolate;overflow:hidden}
+.tp-stage{transform:var(--tp-3d);animation:var(--tp-3d-anim);transform-style:preserve-3d}
+
+/* ── Tokens ────────────────────────────────────────────────────────────────── */
+[data-theme="glitch-garden"]{
+  --tp-h:140;
+  --tp-fx:none;--tp-fx-size:auto;--tp-fx-anim:none;--tp-fx-op:0;--tp-fx-blend:normal;--tp-fx-tf:none;
+  --tp-3d:perspective(1300px) rotateY(10deg);--tp-3d-anim:none;--tp-3d-web:none;
+  --tp-dur-slow:320ms;--tp-stagger:30ms;--tp-reveal:tp-glitch;--tp-reveal-dist:20px;
+  --tp-img-r:0px;--tp-img-frame:none;--tp-img-sh:none;
+  --tp-img-filter:saturate(1.6) contrast(1.2) hue-rotate(30deg);
+  --tp-img-overlay-op:0.4;--tp-img-blend:difference;--tp-img-tilt:0deg;--tp-img-ar:4 / 5;
+
+  --tp-bg:#050805;
+  --tp-canvas:#050805;
+  --tp-surf:#0c130c;
+  --tp-surf-2:#142014;
+
+  --tp-ink:#e7ffe4;
+  --tp-mute:#86a882;
+  --tp-acc:oklch(0.86 0.24 calc(var(--tp-h) + 0));
+  --tp-acc-2:oklch(0.72 0.24 calc(var(--tp-h) + 160));
+  --tp-acc-ink:#050805;
+  --tp-line:oklch(0.46 0.16 calc(var(--tp-h) + 0));
+  --tp-grad:linear-gradient(135deg, oklch(0.86 0.24 calc(var(--tp-h) + 0)), oklch(0.72 0.24 calc(var(--tp-h) + 160)));
+
+  --tp-r:12px;--tp-r-sm:8px;--tp-r-lg:18px;--tp-r-btn:99px;
+  --tp-sh:0 0 30px oklch(0.86 0.24 calc(var(--tp-h) + 0)), 0 14px 30px rgba(0,0,0,.5);
+  --tp-sh-sm:0 0 14px oklch(0.86 0.24 calc(var(--tp-h) + 0));
+  --tp-bw:1.5px;
+
+  --tp-font-display:'Space Grotesk', system-ui;
+  --tp-font-body:'JetBrains Mono', monospace;
+  --tp-font-mono:'JetBrains Mono', monospace;
+  --tp-w-display:700;--tp-track-display:-0.02em;--tp-case-display:none;--tp-hero:62px;
+
+  --tp-dur:110ms;--tp-ease:steps(4, end);--tp-press:0.96;
+  --tp-tex:none;--tp-blur:none;
+
+  /* Semantic states, derived from the brand hue so a re-brand stays coherent.
+     Used for status (ok / warn / bad) — never as decoration. */
+  --tp-ok:oklch(0.86 0.24 calc(var(--tp-h) + 0));
+  --tp-ok-dim:oklch(0.46 0.16 calc(var(--tp-h) + 0));
+  --tp-warn:oklch(0.84 0.19 calc(var(--tp-h) + 55));
+  --tp-warn-dim:oklch(0.44 0.14 calc(var(--tp-h) + 55));
+  --tp-bad:oklch(0.70 0.24 calc(var(--tp-h) + 205));
+  --tp-bad-dim:oklch(0.42 0.16 calc(var(--tp-h) + 205));
+  --tp-alt:oklch(0.72 0.24 calc(var(--tp-h) + 160));
+  --tp-alt-dim:oklch(0.44 0.15 calc(var(--tp-h) + 160));
+
+  color-scheme: dark;
+}
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--tp-bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--tp-canvas);
+  color: var(--tp-ink);
+  font-family: var(--tp-font-body);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Faint datamosh grain. Static, no animation — the theme stays quiet at rest. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--tp-acc) 7%, transparent) 0 1px,
+      transparent 1px 3px
+    );
+  background-size: 100% 3px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-family: var(--tp-font-display);
+  font-weight: var(--tp-w-display);
+  letter-spacing: var(--tp-track-display);
+  text-transform: var(--tp-case-display);
+  color: var(--tp-ink);
+}
+
+p { margin: 0; }
+
+a {
+  color: var(--tp-acc);
+  text-decoration: none;
+}
+
+a:hover { text-decoration: underline; }
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+code, kbd, samp, pre { font-family: var(--tp-font-mono); }
+
+::selection {
+  background: var(--tp-acc);
+  color: var(--tp-acc-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--tp-acc);
+  outline-offset: 2px;
+}
+
+/* Scrollbars, in-theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tp-line) transparent;
+}
+
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--tp-line);
+  border-radius: var(--tp-r-btn);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--tp-acc); }
+
+/* ── Type helpers ──────────────────────────────────────────────────────────── */
+.tp-hero {
+  font-family: var(--tp-font-display);
+  font-weight: var(--tp-w-display);
+  font-size: var(--tp-hero);
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-display {
+  font-family: var(--tp-font-display);
+  font-weight: var(--tp-w-display);
+  letter-spacing: var(--tp-track-display);
+}
+
+.tp-mono {
+  font-family: var(--tp-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Small all-caps machine label — the theme's recurring eyebrow */
+.tp-eyebrow {
+  font-family: var(--tp-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tp-mute);
+}
+
+.tp-mute { color: var(--tp-mute); }
+
+@media (max-width: 620px) {
+  .tp-hero { font-size: calc(var(--tp-hero) * 0.68); }
+}

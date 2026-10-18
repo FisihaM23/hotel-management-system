@@ -13,6 +13,7 @@ export default function Users() {
     const [form, setForm] = useState(emptyForm)
     const [editId, setEditId] = useState(null)
     const [search, setSearch] = useState('')
+    const [filterRole, setFilterRole] = useState('all')
     const [saving, setSaving] = useState(false)
 
     const load = () => {
@@ -49,7 +50,8 @@ export default function Users() {
     }
 
     const filtered = users.filter(u =>
-        !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
+        (filterRole === 'all' || u.role === filterRole) &&
+        (!search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()))
     )
 
     return (
@@ -57,6 +59,59 @@ export default function Users() {
             <div className="page-header">
                 <h2>User Management</h2>
                 <button className="btn btn-primary" onClick={openAdd}><Plus size={16} />Add User</button>
+            </div>
+
+            {/* Horizontal Role Filter Buttons with Hover Effects */}
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 10, marginBottom: 14 }}>
+                {[
+                    { id: 'all', label: 'All Users', count: users.length },
+                    { id: 'admin', label: 'Admins', count: users.filter(u => u.role === 'admin').length },
+                    { id: 'manager', label: 'Managers', count: users.filter(u => u.role === 'manager').length },
+                    { id: 'receptionist', label: 'Receptionists', count: users.filter(u => u.role === 'receptionist').length },
+                    { id: 'customer', label: 'Customers', count: users.filter(u => u.role === 'customer').length },
+                    { id: 'housekeeping', label: 'Housekeeping', count: users.filter(u => u.role === 'housekeeping').length },
+                    { id: 'maintenance', label: 'Maintenance', count: users.filter(u => u.role === 'maintenance').length },
+                ].map(r => (
+                    <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setFilterRole(r.id)}
+                        style={{
+                            padding: '8px 16px',
+                            borderRadius: 10,
+                            border: filterRole === r.id ? '1px solid #38bdf8' : '1px solid rgba(56, 189, 248, 0.15)',
+                            background: filterRole === r.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(13, 35, 71, 0.55)',
+                            color: filterRole === r.id ? '#38bdf8' : '#94a3b8',
+                            fontWeight: 600,
+                            fontSize: 13,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            whiteSpace: 'nowrap',
+                            transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                        }}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.transform = 'translateY(-3px)'
+                            e.currentTarget.style.boxShadow = '0 6px 18px rgba(56, 189, 248, 0.25)'
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.transform = 'translateY(0)'
+                            e.currentTarget.style.boxShadow = 'none'
+                        }}
+                    >
+                        <span>{r.label}</span>
+                        <span style={{
+                            padding: '1px 6px',
+                            borderRadius: 10,
+                            fontSize: 11,
+                            background: filterRole === r.id ? '#38bdf8' : 'rgba(255,255,255,0.08)',
+                            color: filterRole === r.id ? '#0a1628' : '#cbd5e1'
+                        }}>
+                            {r.count}
+                        </span>
+                    </button>
+                ))}
             </div>
 
             <div className="search-bar">

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
-import { FileText, Download } from 'lucide-react'
+import { FileText, Download, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { getInvoices } from '../services/api'
+import { getInvoices, initializeChapaPayment } from '../services/api'
 
 const statusBadge = { draft: 'badge-gray', sent: 'badge-info', paid: 'badge-success', overdue: 'badge-danger' }
 
 export default function Invoices() {
     const [invoices, setInvoices] = useState([])
     const [loading, setLoading] = useState(true)
+    const [payingId, setPayingId] = useState(null)
 
     const load = () => {
         setLoading(true)
@@ -17,6 +18,25 @@ export default function Invoices() {
     useEffect(() => { load() }, [])
 
     const totalAmount = invoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0)
+
+    const handleChapaPay = async (bookingId, amount) => {
+        setPayingId(bookingId)
+        const toastId = toast.loading('Initializing Chapa Payment...')
+        try {
+            const res = await initializeChapaPayment({ booking_id: Number(bookingId), amount: Number(amount) })
+            toast.dismiss(toastId)
+            if (res.data?.checkout_url) {
+                window.location.href = res.data.checkout_url
+            } else {
+                toast.error('Unable to redirect to Chapa')
+            }
+        } catch (err) {
+            toast.dismiss(toastId)
+            toast.error(err.response?.data?.error || 'Failed to initialize payment')
+        } finally {
+            setPayingId(null)
+        }
+    }
 
     const handleDownload = (inv) => {
         const printWindow = window.open('', '_blank');
@@ -73,7 +93,20 @@ export default function Invoices() {
                                             <td style={{ fontWeight: 600 }}>${Number(inv.total || 0).toFixed(2)}</td>
                                             <td><span className={`badge ${statusBadge[inv.status]}`} style={{ textTransform: 'capitalize' }}>{inv.status}</span></td>
                                             <td>
-                                                <button className="btn btn-outline btn-sm btn-icon" title="Download" onClick={() => handleDownload(inv)}><Download size={13} /></button>
+                                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                    {inv.status !== 'paid' && (
+                                                        <button
+                                                            className="btn btn-sm"
+                                                            style={{ background: '#059669', color: '#fff', fontSize: 11, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                                            disabled={payingId === inv.booking_id}
+                                                            onClick={() => handleChapaPay(inv.booking_id, inv.total)}
+                                                            title="Pay with Chapa"
+                                                        >
+                                                            <Zap size={11} /> {payingId === inv.booking_id ? 'Loading...' : 'Pay Chapa'}
+                                                        </button>
+                                                    )}
+                                                    <button className="btn btn-outline btn-sm btn-icon" title="Download" onClick={() => handleDownload(inv)}><Download size={13} /></button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}

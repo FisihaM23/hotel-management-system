@@ -1,9 +1,28 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, Search, Users } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Users, ShieldCheck, Compass } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getGuests, createGuest, updateGuest, deleteGuest } from '../services/api'
 
-const emptyForm = { name: '', email: '', phone: '', address: '' }
+const emptyForm = {
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    id_proof: 'National ID',
+    id_number: '',
+    reason_for_stay: 'Tourism / Leisure'
+}
+
+const reasonBadgeColor = {
+    'Tourism / Leisure': 'badge-success',
+    'Business / Work Trip': 'badge-info',
+    'Conference / Event': 'badge-purple',
+    'Transit / Layover': 'badge-warning',
+    'Personal / Family Visit': 'badge-gray',
+    'Medical Stay': 'badge-danger',
+    'Official / Government': 'badge-info',
+    'Other': 'badge-gray'
+}
 
 export default function Guests() {
     const [guests, setGuests] = useState([])
@@ -16,7 +35,10 @@ export default function Guests() {
 
     const load = (q) => {
         setLoading(true)
-        getGuests(q).then(res => setGuests(res.data)).catch(() => toast.error('Failed to load guests')).finally(() => setLoading(false))
+        getGuests(q)
+            .then(res => setGuests(res.data || []))
+            .catch(() => toast.error('Failed to load guests'))
+            .finally(() => setLoading(false))
     }
 
     useEffect(() => { load() }, [])
@@ -28,7 +50,19 @@ export default function Guests() {
     }
 
     const openAdd = () => { setForm(emptyForm); setEditId(null); setModal(true) }
-    const openEdit = (g) => { setForm(g); setEditId(g.id); setModal(true) }
+    const openEdit = (g) => {
+        setForm({
+            name: g.name || '',
+            email: g.email || '',
+            phone: g.phone || '',
+            address: g.address || '',
+            id_proof: g.id_proof || 'National ID',
+            id_number: g.id_number || '',
+            reason_for_stay: g.reason_for_stay || 'Tourism / Leisure'
+        })
+        setEditId(g.id)
+        setModal(true)
+    }
     const closeModal = () => { setModal(false); setForm(emptyForm); setEditId(null) }
 
     const handleSubmit = async (e) => {
@@ -37,10 +71,10 @@ export default function Guests() {
         try {
             if (editId) {
                 await updateGuest(editId, form)
-                toast.success('Guest updated')
+                toast.success('Guest details updated successfully')
             } else {
                 await createGuest(form)
-                toast.success('Guest added')
+                toast.success('Guest registered successfully')
             }
             closeModal()
             load(search)
@@ -52,29 +86,35 @@ export default function Guests() {
     }
 
     const handleDelete = async (id) => {
-        if (!confirm('Delete this guest?')) return
+        if (!confirm('Delete this guest? This cannot be undone.')) return
         try {
             await deleteGuest(id)
             toast.success('Guest deleted')
             load(search)
-        } catch {
-            toast.error('Failed to delete guest')
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to delete guest')
         }
     }
 
     return (
         <div>
             <div className="page-header">
-                <h2>Guests</h2>
-                <button className="btn btn-primary" onClick={openAdd}><Plus size={16} /> Add Guest</button>
+                <h2>Guest Directory & Registration</h2>
+                <button className="btn btn-primary" onClick={openAdd}>
+                    <Plus size={16} /> Register Guest
+                </button>
             </div>
 
             <div className="search-bar">
                 <div className="search-input-wrap">
                     <Search />
-                    <input placeholder="Search by name, email or phone..." value={search} onChange={handleSearch} />
+                    <input
+                        placeholder="Search by name, email, phone, ID number, or reason for stay..."
+                        value={search}
+                        onChange={handleSearch}
+                    />
                 </div>
-                <span style={{ fontSize: 13, color: '#6b7280' }}>{guests.length} guests</span>
+                <span style={{ fontSize: 13, color: '#6b7280' }}>{guests.length} registered guests</span>
             </div>
 
             <div className="card">
@@ -86,34 +126,73 @@ export default function Guests() {
                             <thead>
                                 <tr>
                                     <th>#</th>
-                                    <th>Name</th>
-                                    <th>Email</th>
-                                    <th>Phone</th>
+                                    <th>Guest Name</th>
+                                    <th>Contact Info</th>
                                     <th>ID Proof</th>
+                                    <th>Reason / Purpose of Stay</th>
+                                    <th>Address</th>
                                     <th>Registered</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {guests.length === 0 ? (
-                                    <tr><td colSpan={7}>
-                                        <div className="empty-state">
-                                            <Users size={40} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.3 }} />
-                                            <p>No guests found</p>
-                                        </div>
-                                    </td></tr>
+                                    <tr>
+                                        <td colSpan={8}>
+                                            <div className="empty-state">
+                                                <Users size={40} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.3 }} />
+                                                <p>No guests found</p>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 ) : guests.map(g => (
                                     <tr key={g.id}>
                                         <td>{g.id}</td>
-                                        <td style={{ fontWeight: 500 }}>{g.name}</td>
-                                        <td>{g.email}</td>
-                                        <td>{g.phone || '-'}</td>
-                                        <td>{g.id_proof || '-'}</td>
-                                        <td>{new Date(g.created_at).toLocaleDateString()}</td>
+                                        <td style={{ fontWeight: 600, color: '#111827' }}>{g.name}</td>
+                                        <td>
+                                            <div style={{ fontSize: 13 }}>{g.email}</div>
+                                            <div style={{ fontSize: 12, color: '#6b7280' }}>{g.phone || 'No phone'}</div>
+                                        </td>
+                                        <td>
+                                            <span className="badge badge-info" style={{ fontSize: 11 }}>
+                                                {g.id_proof || 'National ID'}
+                                            </span>
+                                            {g.id_number && (
+                                                <div style={{ fontSize: 12, color: '#374151', fontFamily: 'monospace', marginTop: 2 }}>
+                                                    {g.id_number}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td>
+                                            <span
+                                                className={`badge ${reasonBadgeColor[g.reason_for_stay] || 'badge-warning'}`}
+                                                style={{ fontSize: 11, fontWeight: 600 }}
+                                            >
+                                                {g.reason_for_stay || 'Tourism / Leisure'}
+                                            </span>
+                                        </td>
+                                        <td style={{ fontSize: 12, color: '#4b5563', maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {g.address || '—'}
+                                        </td>
+                                        <td style={{ fontSize: 12, color: '#6b7280' }}>
+                                            {new Date(g.created_at).toLocaleDateString()}
+                                        </td>
                                         <td>
                                             <div style={{ display: 'flex', gap: 6 }}>
-                                                <button className="btn btn-outline btn-sm btn-icon" onClick={() => openEdit(g)} title="Edit"><Pencil size={13} /></button>
-                                                <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(g.id)} title="Delete"><Trash2 size={13} /></button>
+                                                <button
+                                                    className="btn btn-outline btn-sm btn-icon"
+                                                    onClick={() => openEdit(g)}
+                                                    title="Edit Guest"
+                                                >
+                                                    <Pencil size={13} />
+                                                </button>
+                                                <button
+                                                    className="btn btn-danger btn-sm btn-icon"
+                                                    onClick={() => handleDelete(g.id)}
+                                                    title="Delete Guest"
+                                                >
+                                                    <Trash2 size={13} />
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -124,11 +203,12 @@ export default function Guests() {
                 )}
             </div>
 
+            {/* Standard Guest Registration Modal */}
             {modal && (
                 <div className="modal-overlay" onClick={e => e.target === e.currentTarget && closeModal()}>
-                    <div className="modal">
+                    <div className="modal" style={{ maxWidth: 540 }}>
                         <div className="modal-header">
-                            <h3>{editId ? 'Edit Guest' : 'Add Guest'}</h3>
+                            <h3>{editId ? 'Edit Guest Record' : 'Register Guest (Format Rule)'}</h3>
                             <button className="btn btn-icon btn-outline" onClick={closeModal}>✕</button>
                         </div>
                         <form onSubmit={handleSubmit}>
@@ -136,27 +216,101 @@ export default function Guests() {
                                 <div className="form-row">
                                     <div className="form-group">
                                         <label className="form-label">Full Name *</label>
-                                        <input className="form-control" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+                                        <input
+                                            className="form-control"
+                                            value={form.name}
+                                            onChange={e => setForm({ ...form, name: e.target.value })}
+                                            placeholder="e.g. John Doe"
+                                            required
+                                        />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Email *</label>
-                                        <input className="form-control" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
+                                        <label className="form-label">Email Address *</label>
+                                        <input
+                                            className="form-control"
+                                            type="email"
+                                            value={form.email}
+                                            onChange={e => setForm({ ...form, email: e.target.value })}
+                                            placeholder="john@example.com"
+                                            required
+                                        />
                                     </div>
                                 </div>
+
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label className="form-label">Phone</label>
-                                        <input className="form-control" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                                        <label className="form-label">Phone Number</label>
+                                        <input
+                                            className="form-control"
+                                            value={form.phone}
+                                            onChange={e => setForm({ ...form, phone: e.target.value })}
+                                            placeholder="+251 91 123 4567"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">Reason / Purpose of Stay *</label>
+                                        <select
+                                            className="form-control"
+                                            value={form.reason_for_stay}
+                                            onChange={e => setForm({ ...form, reason_for_stay: e.target.value })}
+                                            required
+                                        >
+                                            <option value="Tourism / Leisure">🌴 Tourism / Leisure</option>
+                                            <option value="Business / Work Trip">💼 Business / Work Trip</option>
+                                            <option value="Conference / Event">🎤 Conference / Event</option>
+                                            <option value="Transit / Layover">✈️ Transit / Layover</option>
+                                            <option value="Personal / Family Visit">👨‍👩‍👦 Personal / Family Visit</option>
+                                            <option value="Medical Stay">🏥 Medical Stay</option>
+                                            <option value="Official / Government">🏛️ Official / Government</option>
+                                            <option value="Other">📌 Other Reason</option>
+                                        </select>
                                     </div>
                                 </div>
+
+                                <div className="form-row">
+                                    <div className="form-group">
+                                        <label className="form-label">ID Proof Type *</label>
+                                        <select
+                                            className="form-control"
+                                            value={form.id_proof}
+                                            onChange={e => setForm({ ...form, id_proof: e.target.value })}
+                                            required
+                                        >
+                                            <option value="National ID">National ID / Kebele ID</option>
+                                            <option value="Passport">Passport</option>
+                                            <option value="Driver License">Driver's License</option>
+                                            <option value="Residence Permit">Residence Permit / Visa</option>
+                                            <option value="Student / Work ID">Company / Student ID</option>
+                                            <option value="Other">Other ID</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group">
+                                        <label className="form-label">ID / Document Number</label>
+                                        <input
+                                            className="form-control"
+                                            value={form.id_number}
+                                            onChange={e => setForm({ ...form, id_number: e.target.value })}
+                                            placeholder="e.g. EP-1234567 or NID-8849"
+                                        />
+                                    </div>
+                                </div>
+
                                 <div className="form-group">
-                                    <label className="form-label">Address</label>
-                                    <textarea className="form-control" rows={2} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+                                    <label className="form-label">Address / Origin</label>
+                                    <textarea
+                                        className="form-control"
+                                        rows={2}
+                                        value={form.address}
+                                        onChange={e => setForm({ ...form, address: e.target.value })}
+                                        placeholder="City, Country or permanent residential address"
+                                    />
                                 </div>
                             </div>
                             <div className="modal-footer">
                                 <button type="button" className="btn btn-outline" onClick={closeModal}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : editId ? 'Update' : 'Add Guest'}</button>
+                                <button type="submit" className="btn btn-primary" disabled={saving}>
+                                    {saving ? 'Saving...' : editId ? 'Update Guest' : 'Register Guest'}
+                                </button>
                             </div>
                         </form>
                     </div>
