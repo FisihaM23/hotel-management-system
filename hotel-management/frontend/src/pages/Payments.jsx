@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Plus, Pencil, CreditCard, Zap, ShieldCheck, Search, Filter } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { getPayments, createPayment, updatePayment, getBookings, initializeChapaPayment, PAYMENT_METHODS } from '../services/api'
+import { getPayments, createPayment, updatePayment, getBookings, PAYMENT_METHODS } from '../services/api'
+import { launchChapaCheckout } from '../utils/chapa'
+import { useAuth } from '../context/AuthContext'
 
 const statusBadge = { pending: 'badge-warning', completed: 'badge-success', refunded: 'badge-info', failed: 'badge-danger' }
 const emptyForm = { booking_id: '', amount: '', method: 'telebirr', status: 'completed', transaction_id: '', notes: '' }
 
 export default function Payments() {
+    const { user } = useAuth()
+    const isAdmin = user && user.role === 'admin'
     const [payments, setPayments] = useState([])
     const [bookings, setBookings] = useState([])
     const [loading, setLoading] = useState(true)
@@ -41,19 +45,18 @@ export default function Payments() {
 
     const handleChapaPay = async (bookingId, amount) => {
         if (!bookingId) return toast.error('Please select a booking')
+        const targetBooking = bookings.find(b => b.id == bookingId)
         setInitiatingChapa(true)
-        const toastId = toast.loading('Initializing Chapa Secure Gateway...')
         try {
-            const res = await initializeChapaPayment({ booking_id: Number(bookingId), amount: Number(amount) })
-            toast.dismiss(toastId)
-            if (res.data?.checkout_url) {
-                window.location.href = res.data.checkout_url
-            } else {
-                toast.error('Did not receive checkout URL from Chapa')
-            }
-        } catch (err) {
-            toast.dismiss(toastId)
-            toast.error(err.response?.data?.error || 'Failed to initialize Chapa')
+            await launchChapaCheckout({
+                bookingId: Number(bookingId),
+                amount: Number(amount),
+                name: targetBooking?.guest_name,
+                email: targetBooking?.guest_email,
+                phone: targetBooking?.guest_phone
+            })
+        } catch {
+            // Handled in launchChapaCheckout
         } finally {
             setInitiatingChapa(false)
         }
@@ -113,17 +116,19 @@ export default function Payments() {
             </div>
 
             <div className="stats-grid" style={{ marginBottom: 24 }}>
-                <div className="stat-card">
-                    <div className="stat-icon" style={{ background: '#d1fae5' }}><CreditCard color="#059669" /></div>
-                    <div className="stat-info"><h3>ETB {total.toFixed(2)}</h3><p>Total Collected</p></div>
-                </div>
+                {isAdmin && (
+                    <div className="stat-card">
+                        <div className="stat-icon" style={{ background: '#d1fae5' }}><CreditCard color="#059669" /></div>
+                        <div className="stat-info"><h3>ETB {total.toFixed(2)}</h3><p>Total Admin Balance Collected</p></div>
+                    </div>
+                )}
                 <div className="stat-card">
                     <div className="stat-icon" style={{ background: '#dbeafe' }}><CreditCard color="#1d4ed8" /></div>
-                    <div className="stat-info"><h3>{payments.filter(p => p.status === 'completed').length}</h3><p>Completed Payments</p></div>
+                    <div className="stat-info"><h3>{payments.filter(p => p.status === 'completed').length}</h3><p>Completed Settlements</p></div>
                 </div>
                 <div className="stat-card">
                     <div className="stat-icon" style={{ background: '#fef3c7' }}><CreditCard color="#d97706" /></div>
-                    <div className="stat-info"><h3>{payments.filter(p => p.status === 'pending').length}</h3><p>Pending Payments</p></div>
+                    <div className="stat-info"><h3>{payments.filter(p => p.status === 'pending').length}</h3><p>Pending Verifications</p></div>
                 </div>
             </div>
 

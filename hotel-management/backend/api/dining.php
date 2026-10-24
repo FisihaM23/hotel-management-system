@@ -21,6 +21,54 @@ if ($method !== 'GET' || in_array($action, ['orders', 'create_order', 'update_or
     }
 }
 $conn = getConnection();
+
+// Self-healing schema: Ensure menu_items & dining_orders tables exist
+$conn->query("CREATE TABLE IF NOT EXISTS menu_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  category ENUM('food', 'alcoholic_drink', 'soft_drink') NOT NULL DEFAULT 'food',
+  sub_category VARCHAR(100) DEFAULT 'General',
+  price DECIMAL(10,2) NOT NULL,
+  description TEXT,
+  image_url VARCHAR(255),
+  alcohol_by_volume VARCHAR(20),
+  preparation_time VARCHAR(50) DEFAULT '15 mins',
+  is_available TINYINT DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)");
+
+$conn->query("CREATE TABLE IF NOT EXISTS dining_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_number VARCHAR(50) UNIQUE NOT NULL,
+  customer_id INT NOT NULL,
+  room_number VARCHAR(20),
+  items LONGTEXT NOT NULL,
+  total_amount DECIMAL(10,2) NOT NULL,
+  delivery_type ENUM('room_service','restaurant_dine_in','takeaway') DEFAULT 'room_service',
+  status ENUM('pending','preparing','delivered','cancelled') DEFAULT 'pending',
+  payment_status ENUM('unpaid','paid','charged_to_room','partially_paid') DEFAULT 'unpaid',
+  special_notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES users(id)
+)");
+
+// If menu_items has no records, auto-seed initial selection
+$chkCount = $conn->query("SELECT COUNT(*) as c FROM menu_items");
+if ($chkCount && (int)$chkCount->fetch_assoc()['c'] === 0) {
+    $conn->query("INSERT INTO menu_items (name, category, sub_category, price, description, image_url, alcohol_by_volume, preparation_time, is_available) VALUES
+        ('Doro Wat (ዶሮ ወጥ)', 'food', 'Ethiopian Traditional', 28.00, 'Slow-cooked chicken stew with berbere spice, served with hard-boiled eggs and fresh injera', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop', NULL, '25-30 mins', 1),
+        ('Special Kitfo (ክትፎ)', 'food', 'Ethiopian Traditional', 26.00, 'Finely minced prime lean beef seasoned with mitmita and niter kibbeh spiced clarified butter, served with ayib and gomen', 'https://images.unsplash.com/photo-1544025162-d76694265947?w=400&auto=format&fit=crop', NULL, '15-20 mins', 1),
+        ('Shiro Tegabino (ሽሮ)', 'food', 'Ethiopian Traditional', 16.00, 'Sizzling clay pot roasted chickpea flour stew enriched with onions, garlic, and Ethiopian herbs', 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400&auto=format&fit=crop', NULL, '15 mins', 1),
+        ('Beef Tibs Firfir (የስጋ ጥብስ ፍርፍር)', 'food', 'Ethiopian Traditional', 22.00, 'Tender sautéed beef cubes with torn injera tossed in rich awaze berbere gravy', 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&auto=format&fit=crop', NULL, '20 mins', 1),
+        ('Prime Grilled Ribeye Steak', 'food', 'Main Course', 34.00, '300g seasoned prime beef ribeye steak with rosemary herb butter, roasted vegetables, and mashed potatoes', 'https://images.unsplash.com/photo-1558030006-450675393462?w=400&auto=format&fit=crop', NULL, '25 mins', 1),
+        ('Gourmet Club Sandwich', 'food', 'Snacks & Light Meals', 15.00, 'Triple-decker toasted bread with roasted turkey, smoked bacon, cheddar, lettuce, tomatoes, and golden french fries', 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=400&auto=format&fit=crop', NULL, '15 mins', 1),
+        ('Habesha Cold Draft Beer', 'alcoholic_drink', 'Ethiopian Beers', 5.50, 'Refreshing premium Ethiopian lager brewed with barley and pure mountain spring water', 'https://images.unsplash.com/photo-1608270119280-92a061d497c2?w=400&auto=format&fit=crop', '5.0%', 'Instant', 1),
+        ('St. George Lager Beer', 'alcoholic_drink', 'Ethiopian Beers', 5.00, 'The iconic Ethiopian lager with crisp malt character and smooth balanced finish', 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=400&auto=format&fit=crop', '4.7%', 'Instant', 1),
+        ('Royal Tej (Pure Honey Wine)', 'alcoholic_drink', 'Traditional Drinks', 12.00, 'Artisanal Ethiopian fermented honey wine delicately flavored with gesho leaves', 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=400&auto=format&fit=crop', '11.0%', 'Instant', 1),
+        ('Signature Ethiopian Spiced Coffee', 'soft_drink', 'Hot Beverages', 4.50, 'Traditional freshly roasted single-origin highland Arabica coffee brewed with cardamom, clove, and rue', 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop', NULL, '10 mins', 1),
+        ('Fresh Mango-Avocado layered Juice (እስፕሪስ)', 'soft_drink', 'Fresh Juices', 6.00, 'Freshly pureed local mango and Hass avocado served layered with fresh lime garnish', 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=400&auto=format&fit=crop', NULL, '10 mins', 1)");
+}
+
 $frontDesk = ['admin', 'manager', 'receptionist'];
 $menuManagers = ['admin', 'manager'];
 

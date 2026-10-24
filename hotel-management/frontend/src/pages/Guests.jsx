@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Pencil, Trash2, Search, Users, ShieldCheck, Compass } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getGuests, createGuest, updateGuest, deleteGuest } from '../services/api'
+import { isValidEmail, EMAIL_POLICY_MESSAGE } from '../utils/validation'
 
 const emptyForm = {
     name: '',
@@ -67,6 +68,9 @@ export default function Guests() {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
+        if (!isValidEmail(form.email)) {
+            return toast.error(EMAIL_POLICY_MESSAGE)
+        }
         setSaving(true)
         try {
             if (editId) {
@@ -225,13 +229,13 @@ export default function Guests() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Email Address *</label>
+                                        <label className="form-label">Email Address * <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(Must be @gmail.com or @icloud.com)</span></label>
                                         <input
                                             className="form-control"
                                             type="email"
                                             value={form.email}
                                             onChange={e => setForm({ ...form, email: e.target.value })}
-                                            placeholder="john@example.com"
+                                            placeholder="guest@gmail.com or guest@icloud.com"
                                             required
                                         />
                                     </div>

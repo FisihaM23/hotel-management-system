@@ -14,6 +14,8 @@ import {
     PAYMENT_METHODS
 } from '../services/api'
 import BookingDiningSelector from '../components/dining/BookingDiningSelector'
+import { isValidEmail, EMAIL_POLICY_MESSAGE } from '../utils/validation'
+import { useAuth } from '../context/AuthContext'
 
 const statusBadge = {
     pending: 'badge-warning',
@@ -31,7 +33,11 @@ const emptyForm = {
     adults: 1,
     children: 0,
     special_requests: '',
-    status: 'pending'
+    status: 'confirmed',
+    payment_method: 'telebirr',
+    payment_amount: '',
+    transaction_id: '',
+    notes: 'Booking registration payment'
 }
 
 const emptyGuest = {
@@ -45,6 +51,8 @@ const emptyGuest = {
 }
 
 export default function Bookings() {
+    const { user } = useAuth()
+    const isAdmin = user && user.role === 'admin'
     const [bookings, setBookings] = useState([])
     const [rooms, setRooms] = useState([])
     const [guests, setGuests] = useState([])
@@ -175,6 +183,9 @@ export default function Bookings() {
             if (guestMode === 'new_walk_in') {
                 if (!walkInForm.name?.trim()) return toast.error('Guest Full Name is required based on hotel registration rules')
                 if (!walkInForm.phone?.trim()) return toast.error('Contact Phone is required based on hotel registration rules')
+                if (walkInForm.email?.trim() && !isValidEmail(walkInForm.email.trim())) {
+                    return toast.error(EMAIL_POLICY_MESSAGE)
+                }
                 if (!walkInForm.reason_for_stay) return toast.error('Reason / Purpose of stay is required based on hotel registration rules')
                 if (!walkInForm.id_proof) return toast.error('ID Proof type is required based on hotel registration rules')
                 if (!walkInForm.id_number?.trim()) return toast.error('ID / Passport Number is required based on hotel registration rules')
@@ -194,6 +205,30 @@ export default function Bookings() {
             } else {
                 if (!form.guest_id) return toast.error('Please select an existing registered guest or switch to New Walk-in Guest')
             }
+
+            // Enforce payment on new booking registration
+            if (!form.payment_method) {
+                return toast.error('Payment method is required before booking registration can be saved')
+            }
+
+            const selRoomObj = rooms.find(r => r.id == form.room_id)
+            const nights = form.check_in && form.check_out ? Math.max(1, (new Date(form.check_out) - new Date(form.check_in)) / 86400000) : 1
+            const roomCost = selRoomObj ? nights * Number(selRoomObj.price_per_night) : 0
+            const calculatedTotal = roomCost + (diningPreOrder?.total || 0)
+            const payAmount = form.payment_amount ? Number(form.payment_amount) : calculatedTotal
+
+            if (payAmount <= 0) {
+                return toast.error('Payment amount must be greater than 0')
+            }
+
+            payload = {
+                ...payload,
+                payment_method: form.payment_method,
+                payment_amount: payAmount,
+                transaction_id: form.transaction_id?.trim() || ('TXN-' + Date.now()),
+                payment_notes: form.notes || 'Front desk booking payment',
+                status: 'confirmed'
+            }
         } else {
             if (!form.guest_id) return toast.error('Please select a guest')
         }
@@ -205,7 +240,7 @@ export default function Bookings() {
                 toast.success('Booking updated')
             } else {
                 await createBooking(payload)
-                toast.success('Booking registered successfully under hotel registration rules!')
+                toast.success('Booking registered, payment recorded, room set to OCCUPIED, and all hotel staff notified!')
             }
             closeModal()
             load()
@@ -218,6 +253,9 @@ export default function Bookings() {
 
     const handleQuickGuestSubmit = async (e) => {
         e.preventDefault()
+        if (!isValidEmail(quickGuestForm.email)) {
+            return toast.error(EMAIL_POLICY_MESSAGE)
+        }
         setSavingQuickGuest(true)
         try {
             const res = await createGuest(quickGuestForm)
@@ -406,7 +444,7 @@ export default function Bookings() {
                                     <th>ID Proof</th>
                                     <th>Room</th>
                                     <th>Stay Dates</th>
-                                    <th>Financials</th>
+                                    <th>{isAdmin ? 'Financials (Total & Due)' : 'Payment Due'}</th>
                                     <th>Status</th>
                                     <th>Front Desk</th>
                                     <th>Actions</th>
@@ -451,14 +489,31 @@ export default function Bookings() {
                                                     <div style={{ fontSize: 11, color: '#9ca3af' }}>to {b.check_out}</div>
                                                 </td>
                                                 <td>
-                                                    <div style={{ fontWeight: 600 }}>ETB {Number(b.total_amount || 0).toFixed(2)}</div>
-                                                    <div style={{ fontSize: 11 }}>
-                                                        {isPaid ? (
-                                                            <span style={{ color: '#059669', fontWeight: 600 }}>✓ Settled</span>
-                                                        ) : (
-                                                            <span style={{ color: '#dc2626', fontWeight: 600 }}>Due: ETB {balance.toFixed(2)}</span>
-                                                        )}
-                                                    </div>
+                                                    {isAdmin ? (
+                                                        <>
+                                                            <div style={{ fontWeight: 600 }}>ETB {Number(b.total_amount || 0).toFixed(2)}</div>
+                                                            <div style={{ fontSize: 11 }}>
+                                                                {isPaid ? (
+                                                                    <span style={{ color: '#059669', fontWeight: 600 }}>✓ Settled</span>
+                                                                ) : (
+                                                                    <span style={{ color: '#dc2626', fontWeight: 600 }}>Due: ETB {balance.toFixed(2)}</span>
+                                                                )}
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        /* Other staff workers see ONLY the Due balance */
+                                                        <div>
+                                                            {isPaid ? (
+                                                                <span style={{ color: '#059669', fontWeight: 700, fontSize: 12, background: '#ecfdf5', padding: '3px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                                    ✓ Settled (No Due)
+                                                                </span>
+                                                            ) : (
+                                                                <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 13, background: '#fef2f2', padding: '3px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                                    Due: ETB {balance.toFixed(2)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td>
                                                     <select
@@ -654,11 +709,11 @@ export default function Bookings() {
                                         </div>
                                         <div className="form-row">
                                             <div className="form-group">
-                                                <label className="form-label">Email Address (Optional)</label>
+                                                <label className="form-label">Email Address (Optional) <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(@gmail.com or @icloud.com)</span></label>
                                                 <input
                                                     type="email"
                                                     className="form-control"
-                                                    placeholder="guest@example.com (or auto-generated)"
+                                                    placeholder="guest@gmail.com or guest@icloud.com (or leave empty for auto)"
                                                     value={walkInForm.email}
                                                     onChange={e => setWalkInForm({ ...walkInForm, email: e.target.value })}
                                                 />
@@ -837,11 +892,65 @@ export default function Bookings() {
                                     <label className="form-label">Special Requests</label>
                                     <textarea className="form-control" rows={2} placeholder="Any special needs or preferences..." value={form.special_requests} onChange={e => setForm({ ...form, special_requests: e.target.value })} />
                                 </div>
+
+                                {!editId && (
+                                    <div style={{ background: '#f8fafc', border: '1.5px solid #3b82f6', borderRadius: 10, padding: 14, margin: '14px 0', boxShadow: '0 2px 8px rgba(59,130,246,0.06)' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <CreditCard size={16} color="#2563eb" /> Payment Required Before Registration
+                                            </div>
+                                            <span style={{ fontSize: 11, background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                                                Mandatory
+                                            </span>
+                                        </div>
+                                        <p style={{ fontSize: 12, color: '#4b5563', margin: '0 0 10px', lineHeight: 1.4 }}>
+                                            Record payment details before saving. When submitted, the room will immediately be marked <strong>Occupied</strong> and all hotel staff will receive the occupancy broadcast.
+                                        </p>
+
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="form-label">Payment Method *</label>
+                                                <select
+                                                    className="form-control"
+                                                    value={form.payment_method}
+                                                    onChange={e => setForm({ ...form, payment_method: e.target.value })}
+                                                    required
+                                                >
+                                                    {PAYMENT_METHODS.map(m => (
+                                                        <option key={m.value} value={m.value}>{m.icon} {m.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="form-label">Amount Paid (ETB) *</label>
+                                                <input
+                                                    className="form-control"
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={form.payment_amount || modalEstimate}
+                                                    onChange={e => setForm({ ...form, payment_amount: e.target.value })}
+                                                    required
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="form-group" style={{ marginBottom: 0 }}>
+                                            <label className="form-label">Transaction / Reference # *</label>
+                                            <input
+                                                className="form-control"
+                                                value={form.transaction_id}
+                                                onChange={e => setForm({ ...form, transaction_id: e.target.value })}
+                                                placeholder="e.g. Telebirr Txn, CBE Ref, or Cash Receipt #"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div className="modal-footer">
                                 <button type="button" className="btn btn-outline" onClick={closeModal}>Cancel</button>
                                 <button type="submit" className="btn btn-primary" disabled={saving}>
-                                    {saving ? 'Processing...' : editId ? 'Update Booking' : 'Register & Create Booking'}
+                                    {saving ? 'Processing...' : editId ? 'Update Booking' : 'Confirm Payment & Register Booking (Marks Room Occupied)'}
                                 </button>
                             </div>
                         </form>
@@ -873,14 +982,14 @@ export default function Bookings() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Email *</label>
+                                        <label className="form-label">Email * <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(Must be @gmail.com or @icloud.com)</span></label>
                                         <input
                                             className="form-control"
                                             type="email"
                                             value={quickGuestForm.email}
                                             onChange={e => setQuickGuestForm({ ...quickGuestForm, email: e.target.value })}
                                             required
-                                            placeholder="guest@example.com"
+                                            placeholder="guest@gmail.com or guest@icloud.com"
                                         />
                                     </div>
                                 </div>
@@ -998,25 +1107,29 @@ export default function Bookings() {
                                     </div>
                                 </div>
 
-                                {/* Billing & Financial Summary */}
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16, textAlign: 'center' }}>
-                                    <div style={{ background: '#eff6ff', padding: 10, borderRadius: 6, border: '1px solid #bfdbfe' }}>
-                                        <div style={{ fontSize: 11, color: '#1e40af' }}>Total Stay Cost</div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#1e3a8a' }}>
-                                            ETB {Number(checkInBookingData.total_amount || 0).toFixed(2)}
+                                {/* Billing & Financial Summary (Admin sees full stay cost, staff sees only remaining Due) */}
+                                <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? 'repeat(3, 1fr)' : '1fr', gap: 10, marginBottom: 16, textAlign: 'center' }}>
+                                    {isAdmin && (
+                                        <>
+                                            <div style={{ background: '#eff6ff', padding: 10, borderRadius: 6, border: '1px solid #bfdbfe' }}>
+                                                <div style={{ fontSize: 11, color: '#1e40af' }}>Total Stay Cost</div>
+                                                <div style={{ fontSize: 16, fontWeight: 700, color: '#1e3a8a' }}>
+                                                    ETB {Number(checkInBookingData.total_amount || 0).toFixed(2)}
+                                                </div>
+                                            </div>
+                                            <div style={{ background: '#f0fdf4', padding: 10, borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                                                <div style={{ fontSize: 11, color: '#166534' }}>Already Paid</div>
+                                                <div style={{ fontSize: 16, fontWeight: 700, color: '#14532d' }}>
+                                                    ETB {Number(checkInBookingData.paid_amount || 0).toFixed(2)}
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                    <div style={{ background: Number(checkInBookingData.balance_amount || 0) > 0 ? '#fef2f2' : '#f0fdf4', padding: 12, borderRadius: 6, border: Number(checkInBookingData.balance_amount || 0) > 0 ? '1.5px solid #fecaca' : '1.5px solid #bbf7d0' }}>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: Number(checkInBookingData.balance_amount || 0) > 0 ? '#991b1b' : '#166534' }}>
+                                            {isAdmin ? 'Balance Remaining' : 'Outstanding Due to Collect'}
                                         </div>
-                                    </div>
-                                    <div style={{ background: '#f0fdf4', padding: 10, borderRadius: 6, border: '1px solid #bbf7d0' }}>
-                                        <div style={{ fontSize: 11, color: '#166534' }}>Already Paid</div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#14532d' }}>
-                                            ETB {Number(checkInBookingData.paid_amount || 0).toFixed(2)}
-                                        </div>
-                                    </div>
-                                    <div style={{ background: Number(checkInBookingData.balance_amount || 0) > 0 ? '#fef2f2' : '#f0fdf4', padding: 10, borderRadius: 6, border: Number(checkInBookingData.balance_amount || 0) > 0 ? '1px solid #fecaca' : '1px solid #bbf7d0' }}>
-                                        <div style={{ fontSize: 11, color: Number(checkInBookingData.balance_amount || 0) > 0 ? '#991b1b' : '#166534' }}>
-                                            Balance Remaining
-                                        </div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: Number(checkInBookingData.balance_amount || 0) > 0 ? '#dc2626' : '#16a34a' }}>
+                                        <div style={{ fontSize: 18, fontWeight: 800, color: Number(checkInBookingData.balance_amount || 0) > 0 ? '#dc2626' : '#16a34a' }}>
                                             ETB {Number(checkInBookingData.balance_amount || 0).toFixed(2)}
                                         </div>
                                     </div>
@@ -1142,25 +1255,29 @@ export default function Bookings() {
                                     </div>
                                 </div>
 
-                                {/* Financial Balance Card */}
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16, textAlign: 'center' }}>
-                                    <div style={{ background: '#f8fafc', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                                        <div style={{ fontSize: 11, color: '#64748b' }}>Total Stay Charges</div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>
-                                            ETB {Number(checkOutBookingData.total_amount || 0).toFixed(2)}
+                                {/* Financial Balance Card (Admin sees full stay charges, staff sees only Due) */}
+                                <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? 'repeat(3, 1fr)' : '1fr', gap: 10, marginBottom: 16, textAlign: 'center' }}>
+                                    {isAdmin && (
+                                        <>
+                                            <div style={{ background: '#f8fafc', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                                                <div style={{ fontSize: 11, color: '#64748b' }}>Total Stay Charges</div>
+                                                <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>
+                                                    ETB {Number(checkOutBookingData.total_amount || 0).toFixed(2)}
+                                                </div>
+                                            </div>
+                                            <div style={{ background: '#f0fdf4', padding: 10, borderRadius: 6, border: '1px solid #bbf7d0' }}>
+                                                <div style={{ fontSize: 11, color: '#166534' }}>Payments Received</div>
+                                                <div style={{ fontSize: 16, fontWeight: 700, color: '#15803d' }}>
+                                                    ETB {Number(checkOutBookingData.paid_amount || 0).toFixed(2)}
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                    <div style={{ background: Number(checkOutBookingData.balance_amount || 0) > 0 ? '#fef2f2' : '#f0fdf4', padding: 12, borderRadius: 6, border: Number(checkOutBookingData.balance_amount || 0) > 0 ? '1.5px solid #fecaca' : '1.5px solid #bbf7d0' }}>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: Number(checkOutBookingData.balance_amount || 0) > 0 ? '#991b1b' : '#166534' }}>
+                                            {isAdmin ? 'Outstanding Due' : 'Guest Due to Collect'}
                                         </div>
-                                    </div>
-                                    <div style={{ background: '#f0fdf4', padding: 10, borderRadius: 6, border: '1px solid #bbf7d0' }}>
-                                        <div style={{ fontSize: 11, color: '#166534' }}>Payments Received</div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#15803d' }}>
-                                            ETB {Number(checkOutBookingData.paid_amount || 0).toFixed(2)}
-                                        </div>
-                                    </div>
-                                    <div style={{ background: Number(checkOutBookingData.balance_amount || 0) > 0 ? '#fef2f2' : '#f0fdf4', padding: 10, borderRadius: 6, border: Number(checkOutBookingData.balance_amount || 0) > 0 ? '1px solid #fecaca' : '1px solid #bbf7d0' }}>
-                                        <div style={{ fontSize: 11, color: Number(checkOutBookingData.balance_amount || 0) > 0 ? '#991b1b' : '#166534' }}>
-                                            Outstanding Due
-                                        </div>
-                                        <div style={{ fontSize: 16, fontWeight: 700, color: Number(checkOutBookingData.balance_amount || 0) > 0 ? '#dc2626' : '#16a34a' }}>
+                                        <div style={{ fontSize: 18, fontWeight: 800, color: Number(checkOutBookingData.balance_amount || 0) > 0 ? '#dc2626' : '#16a34a' }}>
                                             ETB {Number(checkOutBookingData.balance_amount || 0).toFixed(2)}
                                         </div>
                                     </div>

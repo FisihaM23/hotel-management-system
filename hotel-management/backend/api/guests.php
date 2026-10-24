@@ -5,6 +5,9 @@ require_once '../config/auth_middleware.php';
 
 authenticate(['admin', 'manager', 'receptionist']);
 $conn = getConnection();
+$conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS reason_for_stay VARCHAR(100) DEFAULT 'Tourism / Leisure'");
+$conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS id_proof VARCHAR(50) DEFAULT 'National ID'");
+$conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS id_number VARCHAR(100) DEFAULT ''");
 $method = $_SERVER['REQUEST_METHOD'];
 $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
 
@@ -35,6 +38,9 @@ switch ($method) {
 
         if (!$name || !$email) {
             json_fail(400, 'Name and email are required');
+        }
+        if (!isValidUserEmail($email)) {
+            json_fail(400, emailPolicyMessage());
         }
 
         // Check if email already exists
@@ -69,6 +75,17 @@ switch ($method) {
 
         if (!$name || !$email) {
             json_fail(400, 'Name and email are required');
+        }
+        if (!isValidUserEmail($email)) {
+            json_fail(400, emailPolicyMessage());
+        }
+
+        // Ensure email isn't taken by another user
+        $chk = $conn->prepare("SELECT id FROM users WHERE email = ? AND id != ?");
+        $chk->bind_param('si', $email, $id);
+        $chk->execute();
+        if ($chk->get_result()->fetch_assoc()) {
+            json_fail(409, 'Another customer is already registered with this email address');
         }
 
         $stmt = $conn->prepare("UPDATE users SET name=?, email=?, phone=?, address=?, id_proof=?, id_number=?, reason_for_stay=? WHERE id=? AND role='customer'");

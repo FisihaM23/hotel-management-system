@@ -1,0 +1,23 @@
+<?php
+// Copy or rename this file to "custom_keys.php" and enter your real credentials:
+
+// 1. Your Chapa Public Key (e.g. CHAPA_TEST_PUB_... or CHAPA_LIVE_PUB_...)
+define('CHAPA_PUBLIC_KEY', 'CHAPA_TEST_PUB_FJxLS1GQRO2GQUq1ek4XIyoyBvYuIWE9r0QPJCjs');
+
+// 2. Your Chapa Secret Key (e.g. CHAPA_TEST_SEC_... or CHAPA_LIVE_SEC_...)
+define('CHAPA_SECRET_KEY', '');
+
+// 3. Your Phone Number to receive instant SMS payment notifications (e.g. +251911223344 or 0911223344)
+define('ADMIN_NOTIFICATION_PHONE', '+251911223344');
+
+// 4. Your Email Address to receive payment receipts
+define('ADMIN_NOTIFICATION_EMAIL', 'befather7@gmail.com');
+
+// 5. Africa's Talking SMS API credentials (Optional: for live SMS delivery to Ethiopian phones)
+define('AT_USERNAME', 'sandbox');
+define('AT_API_KEY',  'your_africastalking_api_key');
+define('AT_SENDER',   'HotelMS');
+
+// 6. Telegram Bot for free instant smartphone push alerts (Optional)
+define('TELEGRAM_BOT_TOKEN', '');
+define('TELEGRAM_CHAT_ID', '');

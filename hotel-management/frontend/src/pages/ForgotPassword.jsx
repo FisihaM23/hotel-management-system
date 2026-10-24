@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Hotel, Mail, CheckCircle2, KeyRound, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
-import axios from 'axios'
-
-const API = 'http://localhost/hotel-management/api'
+import { forgotPassword } from '../services/api'
+import { isValidEmail, EMAIL_POLICY_MESSAGE } from '../utils/validation'
 
 export default function ForgotPassword() {
     const [email, setEmail] = useState('')
@@ -16,9 +15,12 @@ export default function ForgotPassword() {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
+        if (!isValidEmail(email)) {
+            return toast.error(EMAIL_POLICY_MESSAGE)
+        }
         setLoading(true)
         try {
-            const res = await axios.post(`${API}/reset_passwords.php?action=request`, { email: email.trim() })
+            const res = await forgotPassword({ email: email.trim() })
             setToken(res.data?.token || '')
             setResetLink(res.data?.reset_link || '')
             setEmailSent(Boolean(res.data?.email_sent))
@@ -98,13 +100,13 @@ export default function ForgotPassword() {
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <div className="form-group">
-                            <label className="form-label">Email Address</label>
+                            <label className="form-label">Email Address <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(Must be @gmail.com or @icloud.com)</span></label>
                             <input
                                 className="form-control"
                                 type="email"
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
-                                placeholder="befather7@gmail.com or admin@hotel.com"
+                                placeholder="befather7@gmail.com or user@icloud.com"
                                 required
                             />
                         </div>

@@ -392,7 +392,7 @@ export default function BookingDiningSelector({
                                 2. Recommended Dishes & Drinks ({recommendedItems.length} available):
                             </label>
 
-                            <div style={{ position: 'relative', width: 220 }}>
+                            <div style={{ position: 'relative', width: 220, maxWidth: '100%', flex: '1 1 180px' }}>
                                 <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                                 <input
                                     type="text"
@@ -676,7 +676,7 @@ export default function BookingDiningSelector({
                             </div>
 
                             {/* Service Preferences */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
                                 <div>
                                     <label style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: '#cbd5e1', marginBottom: 3 }}>
                                         Serving / Delivery Preference:

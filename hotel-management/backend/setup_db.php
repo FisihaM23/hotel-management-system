@@ -2,22 +2,31 @@
 // Run: http://localhost/hotel-management/api/setup_db.php
 // This creates the database, all tables, and seeds demo users with correct passwords
 
-$host = 'localhost';
+$host = '127.0.0.1';
 $user = 'root';
 $pass = '';
 
-$conn = new mysqli($host, $user, $pass);
+// Connect with port 3307 fallback to 3306
+mysqli_report(MYSQLI_REPORT_OFF);
+$conn = @new mysqli($host, $user, $pass, '', 3307);
 if ($conn->connect_error) {
-    die(json_encode(['error' => 'Cannot connect to MySQL: ' . $conn->connect_error]));
+    $conn = @new mysqli($host, $user, $pass, '', 3306);
+}
+if ($conn->connect_error) {
+    $conn = @new mysqli('localhost', $user, $pass);
+}
+if ($conn->connect_error) {
+    die(json_encode(['error' => 'Cannot connect to MySQL/MariaDB: ' . $conn->connect_error]));
 }
 
 $steps = [];
 
 // 1. Create database
-$conn->query("CREATE DATABASE IF NOT EXISTS hotel_management CHARACTER SET utf8 COLLATE utf8_general_ci");
-$steps[] = 'Database created';
+$conn->query("CREATE DATABASE IF NOT EXISTS hotel_management CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+$steps[] = 'Database created or verified';
 
 $conn->select_db('hotel_management');
+$conn->set_charset('utf8mb4');
 
 // 2. Create tables
 $tables = [
@@ -29,6 +38,9 @@ $tables = [
   role ENUM('admin','manager','receptionist','customer','housekeeping','maintenance') NOT NULL,
   phone VARCHAR(20),
   address TEXT,
+  id_proof VARCHAR(50) DEFAULT 'National ID',
+  id_number VARCHAR(100) DEFAULT '',
+  reason_for_stay VARCHAR(100) DEFAULT 'Tourism / Leisure',
   status ENUM('active','inactive') DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )",
@@ -65,7 +77,7 @@ $tables = [
   id INT AUTO_INCREMENT PRIMARY KEY,
   booking_id INT NOT NULL,
   amount DECIMAL(10,2) NOT NULL,
-  method ENUM('cash','card','online','bank_transfer') NOT NULL,
+  method VARCHAR(50) NOT NULL DEFAULT 'cash',
   status ENUM('pending','completed','refunded','failed') DEFAULT 'pending',
   transaction_id VARCHAR(100),
   notes TEXT,
@@ -121,6 +133,41 @@ $tables = [
   due_date DATE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (booking_id) REFERENCES bookings(id)
+)",
+"CREATE TABLE IF NOT EXISTS password_resets (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(100) NOT NULL,
+  token VARCHAR(64) NOT NULL UNIQUE,
+  expires_at DATETIME NOT NULL,
+  used TINYINT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)",
+"CREATE TABLE IF NOT EXISTS menu_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  category ENUM('food', 'alcoholic_drink', 'soft_drink') NOT NULL DEFAULT 'food',
+  sub_category VARCHAR(100) DEFAULT 'General',
+  price DECIMAL(10,2) NOT NULL,
+  description TEXT,
+  image_url VARCHAR(255),
+  alcohol_by_volume VARCHAR(20),
+  preparation_time VARCHAR(50) DEFAULT '15 mins',
+  is_available TINYINT DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)",
+"CREATE TABLE IF NOT EXISTS dining_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_number VARCHAR(50) UNIQUE NOT NULL,
+  customer_id INT NOT NULL,
+  room_number VARCHAR(20),
+  items LONGTEXT NOT NULL,
+  total_amount DECIMAL(10,2) NOT NULL,
+  delivery_type ENUM('room_service','restaurant_dine_in','takeaway') DEFAULT 'room_service',
+  status ENUM('pending','preparing','delivered','cancelled') DEFAULT 'pending',
+  payment_status ENUM('unpaid','paid','charged_to_room','partially_paid') DEFAULT 'unpaid',
+  special_notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES users(id)
 )"
 ];
 
@@ -137,7 +184,25 @@ $chkCol = $conn->query("SHOW COLUMNS FROM maintenance_requests LIKE 'resolution_
 if ($chkCol && $chkCol->num_rows == 0) {
     $conn->query("ALTER TABLE maintenance_requests ADD COLUMN resolution_notes TEXT NULL");
 }
-$steps[] = 'Ensured resolution_notes column';
+$steps[] = 'Ensured resolution_notes column in maintenance_requests';
+
+// Ensure guest identity columns exist in users table
+$userCols = [
+    'id_proof' => "VARCHAR(50) DEFAULT 'National ID'",
+    'id_number' => "VARCHAR(100) DEFAULT ''",
+    'reason_for_stay' => "VARCHAR(100) DEFAULT 'Tourism / Leisure'"
+];
+foreach ($userCols as $colName => $colDef) {
+    $chk = $conn->query("SHOW COLUMNS FROM users LIKE '$colName'");
+    if ($chk && $chk->num_rows == 0) {
+        $conn->query("ALTER TABLE users ADD COLUMN $colName $colDef");
+    }
+}
+$steps[] = 'Ensured guest identification columns in users table';
+
+// Ensure payments.method is VARCHAR(50) to support Telebirr, Chapa, CBE Birr, etc.
+$conn->query("ALTER TABLE payments MODIFY COLUMN method VARCHAR(50) NOT NULL DEFAULT 'cash'");
+$steps[] = 'Ensured payments.method supports modern gateways and bank transfers';
 
 // 3. Seed users with correct password hash
 $hash = password_hash('password123', PASSWORD_BCRYPT);
@@ -145,31 +210,28 @@ $verify = password_verify('password123', $hash);
 $steps[] = 'Hash verify test: ' . ($verify ? 'PASS' : 'FAIL');
 
 $users = [
-    ['Mulugeta Fisiha',    'befather7@gmail.com',    'admin'],
-    ['Hotel Manager',      'manager@hotel.com',      'manager'],
-    ['John Receptionist',  'receptionist@hotel.com', 'receptionist'],
-    ['Jane Customer',      'customer@hotel.com',     'customer'],
-    ['Mary Housekeeping',  'housekeeping@hotel.com', 'housekeeping'],
-    ['Bob Maintenance',    'maintenance@hotel.com',  'maintenance'],
+    ['Mulugeta Fisiha',    'befather7@gmail.com',    'admin',        '0932338138'],
+    ['Hotel Manager',      'manager@hotel.com',      'manager',      '0911223344'],
+    ['John Receptionist',  'receptionist@hotel.com', 'receptionist', '0922334455'],
+    ['Jane Customer',      'customer@hotel.com',     'customer',     '0933445566'],
+    ['Mary Housekeeping',  'housekeeping@hotel.com', 'housekeeping', '0944556677'],
+    ['Bob Maintenance',    'maintenance@hotel.com',  'maintenance',  '0955667788'],
 ];
 
-foreach ($users as [$name, $email, $role]) {
-    // Check if exists
+foreach ($users as [$name, $email, $role, $phone]) {
     $check = $conn->prepare("SELECT id FROM users WHERE email = ?");
     $check->bind_param("s", $email);
     $check->execute();
     $exists = $check->get_result()->fetch_assoc();
 
     if ($exists) {
-        // Update password
-        $stmt = $conn->prepare("UPDATE users SET password = ?, status = 'active' WHERE email = ?");
-        $stmt->bind_param("ss", $hash, $email);
+        $stmt = $conn->prepare("UPDATE users SET password = ?, phone = ?, status = 'active' WHERE email = ?");
+        $stmt->bind_param("sss", $hash, $phone, $email);
         $stmt->execute();
-        $steps[] = "Updated password: $email";
+        $steps[] = "Updated user & phone: $email";
     } else {
-        // Insert
-        $stmt = $conn->prepare("INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, ?, 'active')");
-        $stmt->bind_param("ssss", $name, $email, $hash, $role);
+        $stmt = $conn->prepare("INSERT INTO users (name, email, password, role, phone, status) VALUES (?, ?, ?, ?, ?, 'active')");
+        $stmt->bind_param("sssss", $name, $email, $hash, $role, $phone);
         $stmt->execute();
         $steps[] = "Inserted user: $email";
     }
@@ -193,7 +255,32 @@ if ($roomCount == 0) {
     $steps[] = 'Rooms seeded';
 }
 
-// 5. Final verification
+// 5. Seed dining menu items
+$menuCountRes = $conn->query("SELECT COUNT(*) as c FROM menu_items");
+$menuCount = $menuCountRes ? (int)$menuCountRes->fetch_assoc()['c'] : 0;
+if ($menuCount == 0) {
+    $menuItems = [
+        ['Doro Wat (ዶሮ ወጥ)', 'food', 'Ethiopian Traditional', 28.00, 'Slow-cooked chicken stew with berbere spice, served with hard-boiled eggs and fresh injera', 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop', null, '25-30 mins', 1],
+        ['Special Kitfo (ክትፎ)', 'food', 'Ethiopian Traditional', 26.00, 'Finely minced prime lean beef seasoned with mitmita and niter kibbeh spiced clarified butter, served with ayib and gomen', 'https://images.unsplash.com/photo-1544025162-d76694265947?w=400&auto=format&fit=crop', null, '15-20 mins', 1],
+        ['Shiro Tegabino (ሽሮ)', 'food', 'Ethiopian Traditional', 16.00, 'Sizzling clay pot roasted chickpea flour stew enriched with onions, garlic, and Ethiopian herbs', 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400&auto=format&fit=crop', null, '15 mins', 1],
+        ['Beef Tibs Firfir (የስጋ ጥብስ ፍርፍር)', 'food', 'Ethiopian Traditional', 22.00, 'Tender sautéed beef cubes with torn injera tossed in rich awaze berbere gravy', 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&auto=format&fit=crop', null, '20 mins', 1],
+        ['Prime Grilled Ribeye Steak', 'food', 'Main Course', 34.00, '300g seasoned prime beef ribeye steak with rosemary herb butter, roasted vegetables, and mashed potatoes', 'https://images.unsplash.com/photo-1558030006-450675393462?w=400&auto=format&fit=crop', null, '25 mins', 1],
+        ['Gourmet Club Sandwich', 'food', 'Snacks & Light Meals', 15.00, 'Triple-decker toasted bread with roasted turkey, smoked bacon, cheddar, lettuce, tomatoes, and golden french fries', 'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=400&auto=format&fit=crop', null, '15 mins', 1],
+        ['Habesha Cold Draft Beer', 'alcoholic_drink', 'Ethiopian Beers', 5.50, 'Refreshing premium Ethiopian lager brewed with barley and pure mountain spring water', 'https://images.unsplash.com/photo-1608270119280-92a061d497c2?w=400&auto=format&fit=crop', '5.0%', 'Instant', 1],
+        ['St. George Lager Beer', 'alcoholic_drink', 'Ethiopian Beers', 5.00, 'The iconic Ethiopian lager with crisp malt character and smooth balanced finish', 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=400&auto=format&fit=crop', '4.7%', 'Instant', 1],
+        ['Royal Tej (Pure Honey Wine)', 'alcoholic_drink', 'Traditional Drinks', 12.00, 'Artisanal Ethiopian fermented honey wine delicately flavored with gesho leaves', 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=400&auto=format&fit=crop', '11.0%', 'Instant', 1],
+        ['Signature Ethiopian Spiced Coffee', 'soft_drink', 'Hot Beverages', 4.50, 'Traditional freshly roasted single-origin highland Arabica coffee brewed with cardamom, clove, and rue', 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop', null, '10 mins', 1],
+        ['Fresh Mango-Avocado layered Juice (እስፕሪስ)', 'soft_drink', 'Fresh Juices', 6.00, 'Freshly pureed local mango and Hass avocado served layered with fresh lime garnish', 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=400&auto=format&fit=crop', null, '10 mins', 1]
+    ];
+    foreach ($menuItems as [$name, $cat, $sub, $price, $desc, $img, $abv, $prep, $avail]) {
+        $stmt = $conn->prepare("INSERT INTO menu_items (name, category, sub_category, price, description, image_url, alcohol_by_volume, preparation_time, is_available) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssdssssi", $name, $cat, $sub, $price, $desc, $img, $abv, $prep, $avail);
+        $stmt->execute();
+    }
+    $steps[] = 'Dining & Bar menu items seeded';
+}
+
+// 6. Final verification
 $stmt = $conn->prepare("SELECT email, password FROM users WHERE email = 'befather7@gmail.com'");
 $stmt->execute();
 $admin = $stmt->get_result()->fetch_assoc();
@@ -203,7 +290,7 @@ echo json_encode([
     'status'        => 'SUCCESS',
     'login_test'    => $loginTest ? 'befather7@gmail.com / password123 WORKS' : 'LOGIN TEST FAILED',
     'steps'         => $steps,
-    'next'          => 'Go to http://localhost:5174 and login!'
+    'next'          => 'Go to http://localhost:5173 and login!'
 ], JSON_PRETTY_PRINT);
 
 $conn->close();

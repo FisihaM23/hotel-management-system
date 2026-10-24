@@ -105,6 +105,54 @@ switch ($method) {
         json_ok(['id' => $conn->insert_id, 'invoice_number' => $inv_number, 'total' => $total]);
         break;
 
+    case 'PUT':
+        authenticate(['admin', 'manager', 'receptionist']);
+        if (!$id) {
+            json_fail(400, 'Invoice ID is required');
+        }
+        $data = json_decode(file_get_contents('php://input'), true) ?: [];
+        $updates = [];
+        $types = '';
+        $params = [];
+
+        if (isset($data['status'])) {
+            $allowedStatus = ['draft', 'sent', 'paid', 'overdue'];
+            if (!in_array($data['status'], $allowedStatus, true)) {
+                json_fail(400, 'Invalid invoice status');
+            }
+            $updates[] = 'status = ?';
+            $types .= 's';
+            $params[] = $data['status'];
+        }
+        if (isset($data['due_date'])) {
+            $updates[] = 'due_date = ?';
+            $types .= 's';
+            $params[] = $data['due_date'];
+        }
+        if (isset($data['discount'])) {
+            $updates[] = 'discount = ?';
+            $types .= 'd';
+            $params[] = (float)$data['discount'];
+        }
+        if (isset($data['total'])) {
+            $updates[] = 'total = ?';
+            $types .= 'd';
+            $params[] = (float)$data['total'];
+        }
+
+        if (empty($updates)) {
+            json_fail(400, 'No fields to update');
+        }
+
+        $types .= 'i';
+        $params[] = $id;
+        $sql = 'UPDATE invoices SET ' . implode(', ', $updates) . ' WHERE id = ?';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        executeOrFail($stmt, $conn);
+        json_ok(['message' => 'Invoice updated successfully']);
+        break;
+
     default:
         json_fail(405, 'Method not allowed');
 }

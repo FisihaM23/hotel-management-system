@@ -42,6 +42,11 @@ if ($method === 'POST' && $action === 'request') {
         die(json_encode(['error' => 'Email is required']));
     }
 
+    if (!isValidUserEmail($email)) {
+        http_response_code(400);
+        die(json_encode(['error' => emailPolicyMessage()]));
+    }
+
     // Fetch user with phone
     $stmt = $conn->prepare("SELECT id, name, phone FROM users WHERE email = ? AND status = 'active'");
     $stmt->bind_param("s", $email);
@@ -158,9 +163,9 @@ if ($method === 'POST' && $action === 'reset') {
     $upd->bind_param("ss", $hash, $row['email']);
     $upd->execute();
 
-    // Mark token used
-    $mark = $conn->prepare("UPDATE password_resets SET used = 1 WHERE token = ?");
-    $mark->bind_param("s", $token);
+    // Mark token and all previous tokens for this email as used
+    $mark = $conn->prepare("UPDATE password_resets SET used = 1 WHERE email = ? OR token = ?");
+    $mark->bind_param("ss", $row['email'], $token);
     $mark->execute();
 
     // Notify user

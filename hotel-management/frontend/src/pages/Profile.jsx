@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import toast from 'react-hot-toast'
-import { getMyProfile, updateMyProfile } from '../services/api'
+import { updateMyProfile } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
 export default function Profile() {

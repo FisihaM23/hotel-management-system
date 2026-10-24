@@ -87,7 +87,7 @@ export default function Maintenance() {
                             <thead><tr><th>#</th><th>Title</th><th>Room</th><th>Category</th><th>Reported By</th><th>Assigned To</th><th>Priority</th><th>Resolution Notes</th><th>Status</th><th>Actions</th></tr></thead>
                             <tbody>
                                 {myRequests.length === 0
-                                    ? <tr><td colSpan={9} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>
+                                    ? <tr><td colSpan={10} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>
                                         <Wrench size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.3 }} />No requests found
                                     </td></tr>
                                     : myRequests.map(r => (

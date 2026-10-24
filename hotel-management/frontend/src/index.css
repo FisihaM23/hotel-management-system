@@ -1076,14 +1076,60 @@ textarea.form-control {
   background: currentColor;
 }
 
-/* ── Responsive ────────────────────────────────────────────────────────────── */
+/* ── Responsive & Device Adaptation (Mobile, Tablet, Laptop, Desktop) ── */
+
+/* Default container constraints for ultra-wide / 4K displays */
+.page-content {
+  max-width: 1600px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.table-container table {
+  min-width: 650px;
+}
+
+@media (min-width: 1200px) {
+  .table-container table {
+    min-width: 100%;
+  }
+}
+
+/* ── 1. Laptops & Small Desktops (max-width: 1200px) ───────────────────────── */
+@media (max-width: 1200px) {
+  .page-content {
+    padding: 18px 20px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .rooms-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .form-row-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ── 2. Tablets & Small Laptops (max-width: 900px) ──────────────────────────── */
 @media (max-width: 900px) {
   .sidebar {
     transform: translateX(-100%);
     box-shadow: var(--tp-sh);
   }
 
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close {
+    display: inline-flex;
+  }
 
   .sidebar-scrim {
     display: block;
@@ -1091,39 +1137,274 @@ textarea.form-control {
     inset: 0;
     z-index: 99;
     background: color-mix(in oklab, var(--tp-bg) 70%, transparent);
-    backdrop-filter: blur(2px);
+    backdrop-filter: blur(3px);
     animation: tp-fade var(--tp-dur-slow) var(--tp-ease) both;
   }
 
-  .main-content { margin-left: 0; }
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+    min-width: 0;
+  }
 
-  .topbar-menu-btn { display: inline-flex; }
+  .topbar-menu-btn {
+    display: inline-flex;
+  }
 
-  .topbar { padding: 8px 14px; }
+  .topbar {
+    padding: 10px 16px;
+    gap: 10px;
+  }
 
-  .page-content { padding: 16px; }
-}
+  .page-content {
+    padding: 16px;
+  }
 
-@media (max-width: 768px) {
-  .form-row,
-  .form-row-3 { grid-template-columns: 1fr; }
+  .form-row-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
-  .payment-methods { grid-template-columns: 1fr; }
-
-  .conn-status { display: none; }
-
-  .table-container {
-    margin: 0 -16px -16px;
-    padding: 0 16px 4px;
+  .payment-methods {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 420px) {
-  .stats-grid { grid-template-columns: 1fr; }
+/* ── 3. Tablets Portrait & Large Mobile (max-width: 768px) ─────────────────── */
+@media (max-width: 768px) {
+  .conn-status {
+    display: none;
+  }
+
+  .form-row,
+  .form-row-3,
+  .form-row-4 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .stat-card {
+    padding: 13px;
+    gap: 10px;
+  }
+
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .stat-info h3 {
+    font-size: 20px;
+  }
+
+  .payment-methods {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .table-container {
+    margin: 0 -16px -16px;
+    padding: 0 16px 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .page-header {
+    margin-bottom: 16px;
+    gap: 10px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    padding: 8px 14px;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
 }
-/* ── Shell additions ───────────────────────────────────────────────────────── */
+
+/* ── 4. Mobile Devices Portrait & Compact Phones (max-width: 560px) ────────── */
+@media (max-width: 560px) {
+  .topbar {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .topbar-title {
+    font-size: 14.5px;
+    max-width: 140px;
+  }
+
+  .topbar-right {
+    gap: 6px;
+  }
+
+  /* Due button adaptation for small screens */
+  .due-btn {
+    padding: 5px 9px !important;
+    font-size: 12px !important;
+    gap: 4px !important;
+  }
+
+  .due-btn-prefix {
+    display: none;
+  }
+
+  .due-dropdown-popup {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    right: -6px !important;
+  }
+
+  .dropdown-menu {
+    min-width: 280px;
+    max-width: calc(100vw - 20px);
+  }
+
+  .page-content {
+    padding: 12px;
+  }
+
+  .card {
+    padding: 14px 12px;
+    border-radius: var(--tp-r-sm);
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .page-header h2 {
+    font-size: 18px;
+  }
+
+  .page-header > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .page-header .btn {
+    flex: 1 1 140px;
+    justify-content: center;
+    min-height: 42px;
+  }
+
+  .search-bar {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .search-input-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .search-bar select.form-control,
+  .search-bar .form-control {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .rooms-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* Modals on mobile */
+  .modal-overlay {
+    padding: 8px;
+    align-items: flex-end;
+  }
+
+  .modal {
+    max-height: 94vh;
+    border-radius: 16px 16px 0 0;
+    width: 100%;
+  }
+
+  .modal-header {
+    padding: 12px 14px;
+  }
+
+  .modal-header h3 {
+    font-size: 15px;
+  }
+
+  .modal-body {
+    padding: 14px 12px;
+  }
+
+  .modal-footer {
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .modal-footer .btn {
+    flex: 1 1 120px;
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  /* Auth screen adaptation */
+  .login-page {
+    padding: 14px 10px;
+  }
+
+  .login-card {
+    padding: 22px 16px;
+    border-radius: 14px;
+    max-width: 100%;
+  }
+
+  .login-logo h1 {
+    font-size: 19px;
+  }
+}
+
+/* ── 5. Very Small Phones (max-width: 400px) ───────────────────────────────── */
+@media (max-width: 400px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .topbar-title {
+    max-width: 110px;
+    font-size: 13.5px;
+  }
+
+  .due-btn strong {
+    font-size: 11px;
+  }
+
+  .btn {
+    font-size: 11px;
+    padding: 7px 12px;
+  }
+}
+
+/* ── Shell & Notification Additions ────────────────────────────────────────── */
 .sidebar-close {
   display: none;
   align-items: center;
@@ -1136,7 +1417,9 @@ textarea.form-control {
   transition: color var(--tp-dur) var(--tp-ease);
 }
 
-.sidebar-close:hover { color: var(--tp-acc); }
+.sidebar-close:hover {
+  color: var(--tp-acc);
+}
 
 .notif-trigger {
   position: relative;
@@ -1163,7 +1446,7 @@ textarea.form-control {
   right: 4px;
 }
 
-/* Role chips, mapped onto the theme's semantic tokens */
+/* Role chips */
 .role-chip {
   display: inline-flex;
   align-items: center;
@@ -1185,6 +1468,83 @@ textarea.form-control {
 .role-chip.role-maintenance { color: var(--tp-mute); }
 .role-chip.role-customer { color: var(--tp-ok); }
 
-@media (max-width: 900px) {
-  .sidebar-close { display: inline-flex; }
+/* Dining Grid Responsiveness */
+.dining-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
 }
+
+.dining-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 640px) {
+  .dining-category-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .dining-items-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+/* Reports Filter Bar Responsiveness */
+.reports-filter-bar {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.reports-filter-bar .form-group {
+  margin-bottom: 0;
+  flex: 1 1 180px;
+}
+
+.reports-filter-bar .btn {
+  margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .reports-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .reports-filter-bar .form-group {
+    width: 100%;
+  }
+  .reports-filter-bar .btn {
+    width: 100%;
+    min-height: 42px;
+  }
+}
+
+/* ── Admin Mobile Banking Right-Side Popup Animations & Styles ───────────────── */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  aside[aria-label="Admin Mobile Banking Payment Alert"] {
+    right: 10px !important;
+    left: 10px !important;
+    top: 12px !important;
+    width: auto !important;
+    max-width: calc(100vw - 20px) !important;
+  }
+}
+

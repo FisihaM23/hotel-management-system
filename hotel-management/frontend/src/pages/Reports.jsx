@@ -22,8 +22,8 @@ export default function Reports() {
             <div className="page-header"><h2>Reports</h2></div>
 
             <div className="card" style={{ marginBottom: 24 }}>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
+                <div className="reports-filter-bar">
+                    <div className="form-group">
                         <label className="form-label">Report Type</label>
                         <select className="form-control" value={type} onChange={e => setType(e.target.value)}>
                             <option value="revenue">Revenue</option>
@@ -31,11 +31,11 @@ export default function Reports() {
                             <option value="occupancy">Occupancy</option>
                         </select>
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
+                    <div className="form-group">
                         <label className="form-label">From</label>
                         <input className="form-control" type="date" value={from} onChange={e => setFrom(e.target.value)} />
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
+                    <div className="form-group">
                         <label className="form-label">To</label>
                         <input className="form-control" type="date" value={to} onChange={e => setTo(e.target.value)} />
                     </div>

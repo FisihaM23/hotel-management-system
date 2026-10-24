@@ -40,6 +40,18 @@ function passwordPolicyMessage() {
     return 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character';
 }
 
+function isValidUserEmail($email) {
+    if (!is_string($email)) return false;
+    $email = trim($email);
+    if (empty($email)) return false;
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return false;
+    return (bool) preg_match('/^[a-zA-Z0-9.!#$%&\'*+\/=?^_`{|}~-]+@(gmail\.com|icloud\.com|hotel\.com)$/i', $email);
+}
+
+function emailPolicyMessage() {
+    return 'Email address must be valid and end with @gmail.com or @icloud.com (e.g. name@gmail.com)';
+}
+
 function makeAuthToken($user) {
     $issued = (string) time();
     $sig = hash_hmac('sha256', $user['id'] . ':' . $issued . ':' . $user['email'], AUTH_SECRET);
@@ -110,11 +122,11 @@ function syncRoomStatus($conn, $roomId) {
     if (!$room || $room['status'] === 'maintenance') {
         return;
     }
-    $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM bookings WHERE room_id = ? AND status = 'checked_in'");
+    $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM bookings WHERE room_id = ? AND (status = 'checked_in' OR (status = 'confirmed' AND check_in <= CURDATE() AND check_out >= CURDATE()))");
     $stmt->bind_param('i', $roomId);
     $stmt->execute();
-    $checkedIn = (int) $stmt->get_result()->fetch_assoc()['c'];
-    if ($checkedIn > 0) {
+    $activeOccupied = (int) $stmt->get_result()->fetch_assoc()['c'];
+    if ($activeOccupied > 0 || $room['status'] === 'occupied') {
         $status = 'occupied';
     } else {
         $stmt = $conn->prepare("SELECT COUNT(*) AS c FROM bookings

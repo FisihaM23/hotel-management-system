@@ -3,7 +3,7 @@ require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth_middleware.php';
 
-authenticate(['admin', 'manager', 'receptionist']);
+authenticate(['admin', 'manager', 'receptionist', 'housekeeping', 'maintenance']);
 $conn = getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
@@ -11,11 +11,27 @@ $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
 switch ($method) {
     case 'GET':
         $booking_id = $_GET['booking_id'] ?? null;
-        $query = "SELECT p.*, u.name as guest_name, u.email as guest_email, r.room_number, b.total_amount
+        $query = "SELECT p.*, u.name as guest_name, u.email as guest_email, u.phone as guest_phone, r.room_number, r.id as room_id, b.total_amount
                   FROM payments p
                   JOIN bookings b ON p.booking_id = b.id
                   JOIN users u ON b.customer_id = u.id
                   JOIN rooms r ON b.room_id = r.id";
+
+        // Admin Real-Time Mobile Banking alerts endpoint (Admin only)
+        if (isset($_GET['recent_for_admin'])) {
+            $sinceId = isset($_GET['since_id']) ? (int)$_GET['since_id'] : 0;
+            if ($sinceId > 0) {
+                $stmt = $conn->prepare("$query WHERE p.id > ? AND p.status = 'completed' ORDER BY p.id DESC LIMIT 10");
+                $stmt->bind_param('i', $sinceId);
+                $stmt->execute();
+                json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+            } else {
+                $res = $conn->query("$query WHERE p.status = 'completed' ORDER BY p.id DESC LIMIT 5");
+                json_ok($res ? $res->fetch_all(MYSQLI_ASSOC) : []);
+            }
+            break;
+        }
+
         if ($booking_id) {
             $stmt = $conn->prepare("$query WHERE p.booking_id=? ORDER BY p.paid_at DESC");
             $stmt->bind_param('i', $booking_id);
@@ -30,10 +46,10 @@ switch ($method) {
         $d = json_decode(file_get_contents('php://input'), true) ?: [];
         $booking_id = (int) ($d['booking_id'] ?? 0);
         $amount = (float) ($d['amount'] ?? 0);
-        $methodPay = trim($d['method'] ?? 'cash');
+        $methodPay = trim($d['method'] ?? 'telebirr');
         $status = trim($d['status'] ?? 'completed');
         $txn = trim($d['transaction_id'] ?? '');
-        $notes = trim($d['notes'] ?? '');
+        $notes = trim($d['notes'] ?? 'Paid to Admin Account (0932338138 - Mulugeta Fisiha)');
 
         if (!$booking_id || $amount <= 0) {
             json_fail(400, 'Booking and a positive amount are required');
@@ -44,19 +60,25 @@ switch ($method) {
         executeOrFail($stmt, $conn);
         $newPayId = $conn->insert_id;
 
-        // If payment completed, send guest notification and check invoice status
+        // If payment completed, send guest notification, dispatch Admin Mobile Banking Alert, and check invoice status
         if ($status === 'completed') {
-            $bStmt = $conn->prepare("SELECT b.customer_id, r.room_number FROM bookings b JOIN rooms r ON b.room_id = r.id WHERE b.id = ?");
+            $bStmt = $conn->prepare("SELECT b.customer_id, b.total_amount, r.room_number, r.id as room_id, u.name as guest_name, u.phone as guest_phone, u.email as guest_email FROM bookings b JOIN rooms r ON b.room_id = r.id JOIN users u ON b.customer_id = u.id WHERE b.id = ?");
             $bStmt->bind_param('i', $booking_id);
             $bStmt->execute();
             $bData = $bStmt->get_result()->fetch_assoc();
             if ($bData) {
-                $cId = (int) $bData['customer_id'];
-                $methodDisplay = ucwords(str_replace('_', ' ', $methodPay));
-                $msg = "Payment of " . number_format($amount, 2) . " ETB received via " . $methodDisplay . " for Room " . $bData['room_number'] . ". Thank you!";
-                $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Payment Received', ?, 'success')");
-                $notif->bind_param('is', $cId, $msg);
-                $notif->execute();
+                require_once '../config/notifications.php';
+                dispatchPaymentNotification($conn, [
+                    'booking_id' => $booking_id,
+                    'customer_id' => (int)$bData['customer_id'],
+                    'amount' => $amount,
+                    'method' => $methodPay,
+                    'transaction_id' => $txn,
+                    'room_number' => $bData['room_number'],
+                    'guest_name' => $bData['guest_name'],
+                    'guest_phone' => $bData['guest_phone'] ?? '',
+                    'guest_email' => $bData['guest_email'] ?? ''
+                ]);
             }
 
             // Update matching invoice to paid if balance is settled

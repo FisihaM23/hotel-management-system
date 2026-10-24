@@ -378,7 +378,7 @@ export default function Dining() {
             {mainTab === 'menu' && (
                 <div>
                     {/* Category Selection Tabs */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+                    <div className="dining-category-grid">
                         {Object.entries(categoryMeta).map(([catKey, cat]) => {
                             const IconComponent = cat.icon
                             const isSelected = selectedCategory === catKey
@@ -470,11 +470,7 @@ export default function Dining() {
                             <p style={{ color: '#9ca3af', fontSize: 14 }}>Try adjusting your filters or search keywords</p>
                         </div>
                     ) : (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
-                            gap: 20
-                        }}>
+                        <div className="dining-items-grid">
                             {filteredItems.map(item => (
                                 <div
                                     key={item.id}
@@ -622,10 +618,13 @@ export default function Dining() {
                                 </thead>
                                 <tbody>
                                     {orders.map(ord => {
-                                        let parsedItems = []
+                                        let parsedItems
                                         try {
                                             parsedItems = typeof ord.items === 'string' ? JSON.parse(ord.items) : ord.items
-                                        } catch { parsedItems = [] }
+                                        } catch {
+                                            parsedItems = []
+                                        }
+                                        if (!Array.isArray(parsedItems)) parsedItems = []
 
                                         return (
                                             <tr key={ord.id}>

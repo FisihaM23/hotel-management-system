@@ -54,6 +54,12 @@ export const getUsers = (role) => api.get('/users.php' + (role ? `?role=${role}`
 export const createUser = d => api.post('/users.php', d)
 export const updateUser = (id, d) => api.put(`/users.php?id=${id}`, d)
 export const deleteUser = id => api.delete(`/users.php?id=${id}`)
+export const adminResetPassword = (id, d = {}) => api.post(`/users.php?action=admin_reset_password&id=${id}`, d)
+export const adminGenerateResetLink = id => api.post(`/users.php?action=generate_reset_link&id=${id}`)
+export const requestAccount = d => api.post('/auth.php?action=request_account', d)
+export const forgotPassword = d => api.post('/reset_passwords.php?action=request', d)
+export const verifyResetToken = token => api.get(`/reset_passwords.php?action=verify&token=${token}`)
+export const resetUserPassword = d => api.post('/reset_passwords.php?action=reset', d)
 
 // Guests
 export const getGuests = (search) => api.get('/guests.php' + (search ? `?search=${search}` : ''))
@@ -64,6 +70,7 @@ export const deleteGuest = id => api.delete(`/guests.php?id=${id}`)
 // Bookings
 export const getBookings = (status) => api.get('/bookings.php' + (status ? `?status=${status}` : ''))
 export const getMyBookings = () => api.get('/bookings.php?mine=1')
+export const getDues = () => api.get('/bookings.php?due_only=1')
 export const createBooking = d => api.post('/bookings.php', d)
 export const updateBooking = (id, d) => api.put(`/bookings.php?id=${id}`, d)
 export const checkInBooking = (id, d) => api.put(`/bookings.php?id=${id}`, { ...d, action: 'check_in' })
@@ -72,19 +79,20 @@ export const deleteBooking = id => api.delete(`/bookings.php?id=${id}`)
 
 // Payment Methods Constant
 export const PAYMENT_METHODS = [
-    { value: 'telebirr', label: 'Telebirr', icon: '📱' },
+    { value: 'chapa', label: 'Chapa Gateway (Telebirr / CBE / Awash / Cards)', icon: '⚡' },
+    { value: 'telebirr', label: 'Telebirr Direct', icon: '📱' },
     { value: 'cbe_birr', label: 'CBE Birr (Commercial Bank of Ethiopia)', icon: '🏦' },
     { value: 'awash_birr', label: 'Awash Bank / Awash Birr', icon: '🏛️' },
     { value: 'boa', label: 'Bank of Abyssinia (BOA)', icon: '💳' },
     { value: 'cash', label: 'Cash', icon: '💵' },
     { value: 'card', label: 'Credit / Debit Card', icon: '💳' },
-    { value: 'chapa', label: 'Chapa Online (Cards / Telebirr / CBE)', icon: '⚡' },
     { value: 'bank_transfer', label: 'Direct Bank Transfer', icon: '🔄' }
 ]
 
 // Payments
 export const getPayments = () => api.get('/payments.php')
 export const getBookingPayments = id => api.get(`/payments.php?booking_id=${id}`)
+export const getRecentAdminAlerts = (sinceId = 0) => api.get(`/payments.php?recent_for_admin=1${sinceId ? `&since_id=${sinceId}` : ''}`)
 export const createPayment = d => api.post('/payments.php', d)
 export const updatePayment = (id, d) => api.put(`/payments.php?id=${id}`, d)
 
@@ -109,6 +117,7 @@ export const getReports = (type, from, to) => api.get(`/reports.php?type=${type}
 export const getInvoices = () => api.get('/invoices.php')
 export const getMyInvoices = () => api.get('/invoices.php')
 export const createInvoice = d => api.post('/invoices.php', d)
+export const updateInvoice = (id, d) => api.put(`/invoices.php?id=${id}`, d)
 
 // Notifications
 export const getNotifications = () => api.get('/notifications.php')
@@ -140,5 +149,28 @@ export const getChapaConfig = () => api.get('/chapa.php?action=config')
 export const initializeChapaPayment = d => api.post('/chapa.php?action=initialize', d)
 export const verifyChapaPayment = txRef => api.get(`/chapa.php?action=verify&tx_ref=${txRef}`)
 
-export default api
+// Hotel AI Concierge
+export const chatHotelAI = d => api.post('/hotel_ai.php?action=chat', d)
+export const predictFreeRooms = (params = {}) => {
+    const q = new URLSearchParams()
+    if (params.check_in) q.append('check_in', params.check_in)
+    if (params.check_out) q.append('check_out', params.check_out)
+    if (params.guests) q.append('guests', params.guests)
+    if (params.type) q.append('type', params.type)
+    if (params.budget) q.append('budget', params.budget)
+    const qs = q.toString()
+    return api.get('/hotel_ai.php?action=predict_rooms' + (qs ? `&${qs}` : ''))
+}
+export const getHotelAIDining = (params = {}) => {
+    const q = new URLSearchParams()
+    if (params.category) q.append('category', params.category)
+    if (params.search) q.append('search', params.search)
+    const qs = q.toString()
+    return api.get('/hotel_ai.php?action=dining' + (qs ? `&${qs}` : ''))
+}
+export const getHotelAIHistory = (sessionId = '') => api.get('/hotel_ai.php?action=history' + (sessionId ? `&session_id=${sessionId}` : ''))
+export const clearHotelAIHistory = (sessionId = '') => api.post('/hotel_ai.php?action=clear_history', { session_id: sessionId })
+export const getHotelAITrainingInfo = () => api.get('/hotel_ai.php?action=training_info')
+export const getHotelBuildingFloors = () => api.get('/hotel_ai.php?action=building_floors')
 
+export default api

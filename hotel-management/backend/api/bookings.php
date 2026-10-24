@@ -2,9 +2,14 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth_middleware.php';
+require_once '../config/notifications.php';
 
 $authUser = authenticate();
 $conn = getConnection();
+$conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS reason_for_stay VARCHAR(100) DEFAULT 'Tourism / Leisure'");
+$conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS id_proof VARCHAR(50) DEFAULT 'National ID'");
+$conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS id_number VARCHAR(100) DEFAULT ''");
+
 $method = $_SERVER['REQUEST_METHOD'];
 $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $mine = isset($_GET['mine']);
@@ -27,6 +32,7 @@ $baseQuery = "SELECT b.*, u.name as guest_name, u.email as guest_email, u.phone 
 
 function fetchBooking($conn, $bookingId) {
     $stmt = $conn->prepare("SELECT * FROM bookings WHERE id = ?");
+    if (!$stmt) return null;
     $stmt->bind_param('i', $bookingId);
     $stmt->execute();
     return $stmt->get_result()->fetch_assoc();
@@ -34,8 +40,36 @@ function fetchBooking($conn, $bookingId) {
 
 switch ($method) {
     case 'GET':
+        $allStaffRoles = ['admin', 'manager', 'receptionist', 'housekeeping', 'maintenance'];
+
+        // Dues endpoint for staff workers
+        if (isset($_GET['due_only']) || isset($_GET['dues'])) {
+            if (!in_array($authUser['role'], $allStaffRoles, true)) {
+                json_fail(403, 'Access denied');
+            }
+            $dueSql = "$baseQuery 
+                       WHERE b.status NOT IN ('cancelled', 'checked_out')
+                       HAVING balance_amount > 0.01
+                       ORDER BY balance_amount DESC, b.created_at DESC";
+            $dueRes = $conn->query($dueSql);
+            $dues = $dueRes ? $dueRes->fetch_all(MYSQLI_ASSOC) : [];
+            $totalDue = 0.0;
+            foreach ($dues as $item) {
+                $totalDue += (float)$item['balance_amount'];
+            }
+            json_ok([
+                'total_due' => round($totalDue, 2),
+                'count' => count($dues),
+                'dues' => $dues
+            ]);
+            break;
+        }
+
         if ($mine || $authUser['role'] === 'customer') {
             $stmt = $conn->prepare("$baseQuery WHERE b.customer_id=? ORDER BY b.created_at DESC");
+            if (!$stmt) {
+                json_ok([]);
+            }
             $stmt->bind_param('i', $authUser['id']);
             $stmt->execute();
             json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
@@ -84,6 +118,10 @@ switch ($method) {
 
             if (!$guestName) {
                 json_fail(400, 'Customer registration is required. Please provide guest name based on hotel registration rules.');
+            }
+
+            if ($guestEmail && !isValidUserEmail($guestEmail)) {
+                json_fail(400, emailPolicyMessage());
             }
 
             if (!$guestEmail) {
@@ -196,10 +234,27 @@ switch ($method) {
         $special = trim($d['special_requests'] ?? '');
         if ($diningTotal > 0 && !empty($cleanDiningItems)) {
             $deliveryPref = $d['dining_delivery_time'] ?? 'On arrival / Check-in';
-            $diningNote = "[Pre-ordered Dining & Bar: $" . number_format($diningTotal, 2) . " (" . count($cleanDiningItems) . " items) - Preference: " . $deliveryPref . "]";
+            $diningNote = "[Pre-ordered Dining & Bar: ETB " . number_format($diningTotal, 2) . " (" . count($cleanDiningItems) . " items) - Preference: " . $deliveryPref . "]";
             $special = $special ? ($special . "\n" . $diningNote) : $diningNote;
         }
-        $status = 'pending';
+
+        // Payment Processing & Requirement Check
+        $deposit = isset($d['payment_amount']) ? (float)$d['payment_amount'] : (isset($d['deposit_amount']) ? (float)$d['deposit_amount'] : 0);
+        $payMethod = trim($d['payment_method'] ?? ($d['method'] ?? ''));
+        $txn = trim($d['transaction_id'] ?? ($d['tx_ref'] ?? ''));
+        $notes = trim($d['notes'] ?? ($d['payment_notes'] ?? 'Direct Payment to Admin Account (0932338138 - Mulugeta Fisiha)'));
+
+        // Customer booking strictly requires payment before saving registration
+        if ($authUser['role'] === 'customer') {
+            if ($deposit <= 0) {
+                $deposit = $total;
+            }
+            if (empty($payMethod)) {
+                json_fail(400, 'Payment is required before booking registration can be saved. Please select a payment method.');
+            }
+        }
+
+        $status = ($deposit > 0) ? 'confirmed' : 'pending';
         if (in_array($authUser['role'], $staffRoles, true) && !empty($d['status'])) {
             $allowed = ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'];
             if (in_array($d['status'], $allowed, true)) {
@@ -220,8 +275,7 @@ switch ($method) {
             $itemsJson = json_encode($cleanDiningItems);
             $deliveryType = 'room_service';
             $orderStatus = 'pending';
-            $depositAmount = isset($d['payment_amount']) ? (float)$d['payment_amount'] : (isset($d['deposit_amount']) ? (float)$d['deposit_amount'] : 0);
-            $paymentStatus = ($depositAmount >= $total) ? 'paid' : ($depositAmount > 0 ? 'partially_paid' : 'charged_to_room');
+            $paymentStatus = ($deposit >= $total) ? 'paid' : ($deposit > 0 ? 'partially_paid' : 'charged_to_room');
             $diningNotes = 'Pre-ordered with Booking #' . $newId . ' (Time: ' . ($d['dining_delivery_time'] ?? 'On arrival') . '). ' . ($d['dining_notes'] ?? '');
             
             $dStmt = $conn->prepare("INSERT INTO dining_orders (order_number, customer_id, room_number, items, total_amount, delivery_type, status, payment_status, special_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -229,24 +283,72 @@ switch ($method) {
             $dStmt->execute();
         }
 
-        // If booking was directly marked checked_in, set room status to occupied
-        if ($status === 'checked_in') {
+        // If payment was provided, record payment, mark invoice paid, set room to OCCUPIED, and notify ALL workers!
+        if ($deposit > 0) {
+            if (!$txn) {
+                $txn = strtoupper($payMethod) . '-' . time() . '-' . rand(100, 999);
+            }
+            $pStmt = $conn->prepare("INSERT INTO payments (booking_id, amount, method, status, transaction_id, notes, paid_at) VALUES (?, ?, ?, 'completed', ?, ?, NOW())");
+            $pStmt->bind_param('idsss', $newId, $deposit, $payMethod, $txn, $notes);
+            $pStmt->execute();
+
+            $balanceDue = max(0, $total - $deposit);
+            $invStatus = ($balanceDue <= 0.01) ? 'paid' : 'sent';
+
+            // Create invoice record
+            $invNumber = 'INV-' . date('Y') . '-' . strtoupper(substr(uniqid(), -6));
+            $invSub = $total;
+            $invStmt = $conn->prepare("INSERT INTO invoices (booking_id, invoice_number, subtotal, tax, discount, total, status, due_date) VALUES (?, ?, ?, 0, 0, ?, ?, CURDATE())");
+            $invStmt->bind_param('isdds', $newId, $invNumber, $invSub, $total, $invStatus);
+            $invStmt->execute();
+
+            // Mark room status to OCCUPIED!
             $rUpd = $conn->prepare("UPDATE rooms SET status='occupied' WHERE id=?");
             $rUpd->bind_param('i', $room_id);
             $rUpd->execute();
-        } else {
-            syncRoomStatus($conn, $room_id);
-        }
 
-        // If initial deposit/payment was provided with booking
-        $deposit = isset($d['payment_amount']) ? (float)$d['payment_amount'] : (isset($d['deposit_amount']) ? (float)$d['deposit_amount'] : 0);
-        if ($deposit > 0) {
-            $payMethod = trim($d['payment_method'] ?? ($d['method'] ?? 'cash'));
-            $txn = trim($d['transaction_id'] ?? '');
-            $notes = trim($d['notes'] ?? 'Initial booking deposit / payment');
-            $pStmt = $conn->prepare("INSERT INTO payments (booking_id, amount, method, status, transaction_id, notes) VALUES (?, ?, ?, 'completed', ?, ?)");
-            $pStmt->bind_param('idsss', $newId, $deposit, $payMethod, $txn, $notes);
-            $pStmt->execute();
+            // Look up guest details for broadcast
+            $gStmt = $conn->prepare("SELECT name, phone, email FROM users WHERE id = ?");
+            $gStmt->bind_param('i', $customer_id);
+            $gStmt->execute();
+            $gUser = $gStmt->get_result()->fetch_assoc();
+            $actualGuestName = $gUser['name'] ?? 'Valued Guest';
+
+            // Broadcast room occupied alert to ALL hotel workers (admin, manager, receptionist, housekeeping, maintenance)
+            broadcastRoomOccupiedAlert(
+                $conn,
+                $newId,
+                $room_id,
+                $room['room_number'],
+                $actualGuestName,
+                $deposit,
+                $payMethod,
+                $check_in,
+                $check_out,
+                $balanceDue
+            );
+
+            // Multi-channel payment confirmation notification (SMS to 0932338138, customer, email, telegram)
+            dispatchPaymentNotification($conn, [
+                'booking_id' => $newId,
+                'customer_id' => $customer_id,
+                'amount' => $deposit,
+                'method' => $payMethod,
+                'transaction_id' => $txn,
+                'room_number' => $room['room_number'],
+                'guest_name' => $actualGuestName,
+                'guest_phone' => $gUser['phone'] ?? '',
+                'guest_email' => $gUser['email'] ?? ''
+            ]);
+        } else {
+            $balanceDue = $total;
+            if ($status === 'checked_in') {
+                $rUpd = $conn->prepare("UPDATE rooms SET status='occupied' WHERE id=?");
+                $rUpd->bind_param('i', $room_id);
+                $rUpd->execute();
+            } else {
+                syncRoomStatus($conn, $room_id);
+            }
         }
 
         $msg = "Your booking for Room " . $room['room_number'] . " has been created successfully.";
@@ -254,7 +356,16 @@ switch ($method) {
         $notif->bind_param('is', $customer_id, $msg);
         $notif->execute();
 
-        json_ok(['id' => $newId, 'total_amount' => $total, 'customer_id' => $customer_id, 'message' => 'Booking registered successfully based on hotel rules']);
+        json_ok([
+            'id' => $newId,
+            'total_amount' => $total,
+            'paid_amount' => $deposit,
+            'balance_due' => round($balanceDue, 2),
+            'customer_id' => $customer_id,
+            'payment_status' => ($deposit >= $total ? 'paid' : ($deposit > 0 ? 'partially_paid' : 'pending')),
+            'room_status' => ($deposit > 0 ? 'occupied' : 'available'),
+            'message' => 'Booking registered successfully. Payment recorded, room set to OCCUPIED, and staff notified of due balance.'
+        ]);
         break;
 
     case 'PUT':

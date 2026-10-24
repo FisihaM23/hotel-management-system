@@ -93,7 +93,7 @@ export default function Housekeeping() {
                             <thead><tr><th>#</th><th>Room</th><th>Task Type</th><th>Assigned To</th><th>Priority</th><th>Scheduled</th><th>Notes</th><th>Status</th><th>Actions</th></tr></thead>
                             <tbody>
                                 {myTasks.length === 0
-                                    ? <tr><td colSpan={8} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>
+                                    ? <tr><td colSpan={9} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>
                                         <Sparkles size={32} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.3 }} />No tasks found
                                     </td></tr>
                                     : myTasks.map(t => (

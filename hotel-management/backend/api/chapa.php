@@ -3,6 +3,7 @@ require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth_middleware.php';
 require_once '../config/chapa.php';
+require_once '../config/notifications.php';
 
 $conn = getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
@@ -35,7 +36,8 @@ function notifyUsers($conn, $guestUserId, $title, $message) {
 if ($action === 'config' && $method === 'GET') {
     json_ok([
         'currency'      => CHAPA_CURRENCY,
-        'is_configured' => (!empty(CHAPA_SECRET_KEY) && !str_contains(CHAPA_SECRET_KEY, 'sample_test_key'))
+        'public_key'    => CHAPA_PUBLIC_KEY,
+        'is_configured' => !empty(CHAPA_PUBLIC_KEY)
     ]);
     $conn->close();
     exit;
@@ -159,10 +161,19 @@ if ($action === 'initialize' && $method === 'POST') {
         if ($httpCode === 200 && ($chapaRes['status'] ?? '') === 'success' && !empty($chapaRes['data']['checkout_url'])) {
             json_ok([
                 'status'       => 'success',
+                'public_key'   => CHAPA_PUBLIC_KEY,
                 'checkout_url' => $chapaRes['data']['checkout_url'],
                 'tx_ref'       => $txRef,
                 'amount'       => $amount,
                 'currency'     => CHAPA_CURRENCY,
+                'email'        => $guestEmail,
+                'first_name'   => $firstName,
+                'last_name'    => $lastName,
+                'phone_number' => $guestPhone,
+                'title'        => 'Hotel Booking #' . $bookingId,
+                'description'  => 'Payment for Room ' . ($booking['room_number'] ?? '') . ' (' . CHAPA_CURRENCY . ' ' . $amount . ')',
+                'callback_url' => $callbackUrl,
+                'return_url'   => $returnUrl,
                 'booking_id'   => $bookingId,
                 'simulated'    => false
             ]);
@@ -171,17 +182,28 @@ if ($action === 'initialize' && $method === 'POST') {
         }
     }
 
-    // Fallback: Sandbox simulation checkout URL for development testing
+    // Hosted / Inline Checkout parameters with user's Chapa Public Key
+    $hostedPayUrl = 'https://api.chapa.co/v1/hosted/pay';
     $simulatedUrl = rtrim($frontendOrigin, '/') . '/payment-success?tx_ref=' . $txRef . '&simulated=1';
     json_ok([
         'status'       => 'success',
+        'public_key'   => CHAPA_PUBLIC_KEY,
         'checkout_url' => $simulatedUrl,
+        'hosted_url'   => $hostedPayUrl,
         'tx_ref'       => $txRef,
         'amount'       => $amount,
         'currency'     => CHAPA_CURRENCY,
+        'email'        => $guestEmail,
+        'first_name'   => $firstName,
+        'last_name'    => $lastName,
+        'phone_number' => $guestPhone,
+        'title'        => 'Hotel Booking #' . $bookingId,
+        'description'  => 'Payment for Room ' . ($booking['room_number'] ?? '') . ' (' . CHAPA_CURRENCY . ' ' . $amount . ')',
+        'callback_url' => $callbackUrl,
+        'return_url'   => $returnUrl,
         'booking_id'   => $bookingId,
         'simulated'    => true,
-        'message'      => 'Chapa sandbox checkout initialized'
+        'message'      => 'Chapa transaction initialized with Public Key'
     ]);
     $conn->close();
     exit;
@@ -273,13 +295,29 @@ if ($action === 'verify') {
             $updBk->execute();
         }
 
-        // 4. Send Secure In-App Notifications
-        $amountFormatted = number_format((float) $payment['amount'], 2);
-        $title = "Payment Confirmed via Chapa";
-        $guestMsg = "Your payment of " . CHAPA_CURRENCY . " {$amountFormatted} for Booking #{$payment['booking_id']} (Room {$payment['room_number']}) was successfully received and verified. Reference: {$txRef}.";
-        $adminMsg = "Payment of " . CHAPA_CURRENCY . " {$amountFormatted} verified via Chapa for Booking #{$payment['booking_id']} from {$payment['guest_name']}.";
+        // 4. Mark Room as OCCUPIED
+        $roomId = (int)($payment['room_id'] ?? 0);
+        if ($roomId > 0) {
+            $rUpd = $conn->prepare("UPDATE rooms SET status = 'occupied' WHERE id = ?");
+            $rUpd->bind_param("i", $roomId);
+            $rUpd->execute();
+        }
 
-        notifyUsers($conn, $payment['customer_id'], $title, $guestMsg);
+        // 5. Broadcast to ALL hotel workers (admin, manager, receptionist, housekeeping, maintenance)
+        broadcastRoomOccupiedAlert(
+            $conn,
+            $payment['booking_id'],
+            $roomId,
+            $payment['room_number'] ?? 'N/A',
+            $payment['guest_name'] ?? 'Valued Guest',
+            $payment['amount'],
+            'Chapa',
+            $payment['check_in'] ?? '',
+            $payment['check_out'] ?? ''
+        );
+
+        // 6. Send Multi-Channel Notifications (SMS to Phone 0932338138, Email, Telegram, In-App)
+        dispatchPaymentNotification($conn, $payment);
 
         // Fetch refreshed payment details
         $stmt->execute();
@@ -308,7 +346,15 @@ if ($action === 'webhook' && $method === 'POST') {
     $txRef = $data['tx_ref'] ?? '';
 
     if (!empty($txRef)) {
-        $stmt = $conn->prepare("SELECT p.*, b.customer_id, b.room_id FROM payments p JOIN bookings b ON p.booking_id = b.id WHERE p.transaction_id = ?");
+        $stmt = $conn->prepare("
+            SELECT p.*, b.customer_id, b.room_id, r.room_number,
+                   u.name as guest_name, u.email as guest_email, u.phone as guest_phone
+            FROM payments p
+            JOIN bookings b ON p.booking_id = b.id
+            JOIN users u ON b.customer_id = u.id
+            JOIN rooms r ON b.room_id = r.id
+            WHERE p.transaction_id = ?
+        ");
         $stmt->bind_param("s", $txRef);
         $stmt->execute();
         $payment = $stmt->get_result()->fetch_assoc();
@@ -322,7 +368,27 @@ if ($action === 'webhook' && $method === 'POST') {
             $updInv->bind_param("i", $payment['booking_id']);
             $updInv->execute();
 
-            notifyUsers($conn, $payment['customer_id'], "Payment Received", "Chapa webhook confirmed receipt of " . CHAPA_CURRENCY . " {$payment['amount']} for Booking #{$payment['booking_id']}.");
+            // Mark room occupied
+            $webhookRoomId = (int)($payment['room_id'] ?? 0);
+            if ($webhookRoomId > 0) {
+                $rUpd = $conn->prepare("UPDATE rooms SET status = 'occupied' WHERE id = ?");
+                $rUpd->bind_param("i", $webhookRoomId);
+                $rUpd->execute();
+            }
+
+            // Broadcast room occupied alert to all workers
+            broadcastRoomOccupiedAlert(
+                $conn,
+                $payment['booking_id'],
+                $webhookRoomId,
+                $payment['room_number'] ?? 'N/A',
+                $payment['guest_name'] ?? 'Valued Guest',
+                $payment['amount'],
+                'Chapa'
+            );
+
+            // Multi-channel alert to Phone (SMS, Email, Telegram, In-App)
+            dispatchPaymentNotification($conn, $payment);
         }
     }
     json_ok(['received' => true]);
