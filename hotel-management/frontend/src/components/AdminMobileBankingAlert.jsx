@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { getRecentAdminAlerts, PAYMENT_METHODS } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import safeStorage from '../utils/storage'
 import toast from 'react-hot-toast'
 
 /**
@@ -82,11 +83,11 @@ export default function AdminMobileBankingAlert() {
     const knownIdsRef = useRef(new Set())
     const initialLoadDone = useRef(false)
 
-    // Load previously seen payments from localStorage to avoid spamming on page reload
+    // Load previously seen payments from safeStorage to avoid spamming on page reload
     useEffect(() => {
         if (!isAdmin) return
         try {
-            const stored = JSON.parse(localStorage.getItem('hms_seen_admin_payments') || '[]')
+            const stored = JSON.parse(safeStorage.getItem('hms_seen_admin_payments') || '[]')
             if (Array.isArray(stored)) {
                 stored.forEach(id => knownIdsRef.current.add(id))
             }
@@ -98,7 +99,7 @@ export default function AdminMobileBankingAlert() {
     const saveSeen = (idList) => {
         try {
             const arr = Array.from(knownIdsRef.current).slice(-100)
-            localStorage.setItem('hms_seen_admin_payments', JSON.stringify(arr))
+            safeStorage.setItem('hms_seen_admin_payments', JSON.stringify(arr))
         } catch {
             // ignore
         }

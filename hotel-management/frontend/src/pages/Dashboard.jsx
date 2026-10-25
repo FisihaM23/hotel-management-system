@@ -82,8 +82,8 @@ export default function Dashboard() {
         setRefreshing(false)
     }
 
-    // Customers belong in the booking portal, not the operations dashboard.
-    if (user?.role === 'customer') return <Navigate to="/my-bookings" replace />
+    // Customers land on the luxury hotel & park showcase
+    if (user?.role === 'customer') return <Navigate to="/" replace />
 
     if (failed) {
         return (

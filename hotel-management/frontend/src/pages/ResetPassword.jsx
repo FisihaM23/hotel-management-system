@@ -61,13 +61,13 @@ export default function ResetPassword() {
 
     return (
         <div className="login-page">
-            <div className="login-card" style={{ maxWidth: 460 }}>
+            <div className="login-card" style={{ maxWidth: 460, boxShadow: 'none' }}>
                 <div className="login-logo">
                     <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
                         <Hotel size={34} color="#fff" />
                     </div>
-                    <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111' }}>Reset Account Password</h1>
-                    <p style={{ color: '#6b7280', fontSize: 13.5 }}>Secure Single-Use Authentication Gateway</p>
+                    <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tp-ink)' }}>Reset Account Password</h1>
+                    <p style={{ color: 'var(--tp-mute)', fontSize: 13.5 }}>Secure Single-Use Authentication Gateway</p>
                 </div>
 
                 {status === 'verifying' && (
@@ -85,14 +85,14 @@ export default function ResetPassword() {
                         <h3 style={{ fontSize: 17, fontWeight: 700, color: '#991b1b', marginBottom: 8 }}>
                             Invalid or Expired Token
                         </h3>
-                        <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
+                        <p style={{ color: 'var(--tp-mute)', fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
                             This password reset token has expired (1 hour limit) or has already been used. Please request a new link or contact Administrator <strong>Mulugeta Fisiha</strong>.
                         </p>
                         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-                            <Link to="/forgot-password" className="btn btn-primary" style={{ textDecoration: 'none', fontSize: 13, padding: '9px 18px' }}>
+                            <Link to="/forgot-password" className="btn btn-primary" style={{ textDecoration: 'none', fontSize: 13, padding: '9px 18px', fontWeight: 700 }}>
                                 Request New Link
                             </Link>
-                            <Link to="/login" className="btn btn-outline" style={{ textDecoration: 'none', fontSize: 13, padding: '9px 18px' }}>
+                            <Link to="/login" className="btn btn-outline" style={{ textDecoration: 'none', fontSize: 13, padding: '9px 18px', fontWeight: 700 }}>
                                 Back to Sign In
                             </Link>
                         </div>
@@ -102,10 +102,10 @@ export default function ResetPassword() {
                 {status === 'done' && (
                     <div style={{ textAlign: 'center', padding: '20px 0' }}>
                         <CheckCircle size={54} color="#22c55e" style={{ margin: '0 auto 14px', display: 'block' }} />
-                        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#111', marginBottom: 6 }}>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--tp-ink)', marginBottom: 6 }}>
                             Password Successfully Reset
                         </h3>
-                        <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 20 }}>
+                        <p style={{ color: 'var(--tp-mute)', fontSize: 13, marginBottom: 20 }}>
                             Your credentials have been securely updated and old reset links invalidated. You can now sign in with your new password.
                         </p>
                         <button

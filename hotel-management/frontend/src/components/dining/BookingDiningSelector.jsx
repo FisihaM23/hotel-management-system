@@ -126,11 +126,11 @@ export default function BookingDiningSelector({
                 case 'breakfast':
                     return sub.includes('breakfast') || sub.includes('starter') || sub.includes('coffee') || sub.includes('juice')
                 case 'ethiopian':
-                    return sub.includes('ethiopian') || sub.includes('tibs') || sub.includes('stew') || sub.includes('kitfo') || sub.includes('fish') || sub.includes('tej')
+                    return cat === 'ethiopian_food' || sub.includes('ethiopian') || sub.includes('tibs') || sub.includes('stew') || sub.includes('kitfo') || sub.includes('fish') || sub.includes('tej')
                 case 'main_course':
-                    return cat === 'food' && (sub.includes('main') || sub.includes('tibs') || sub.includes('steak') || name.includes('salmon') || name.includes('pizza') || name.includes('pasta'))
+                    return (cat === 'food' || cat === 'ethiopian_food') && (sub.includes('main') || sub.includes('tibs') || sub.includes('steak') || name.includes('salmon') || name.includes('pizza') || name.includes('pasta'))
                 case 'vegetarian':
-                    return sub.includes('vegetarian') || sub.includes('fasting') || name.includes('shiro') || name.includes('vegan') || name.includes('salad')
+                    return sub.includes('vegetarian') || sub.includes('fasting') || name.includes('shiro') || name.includes('vegan') || name.includes('salad') || name.includes('misir') || name.includes('kik')
                 case 'desserts':
                     return sub.includes('dessert') || name.includes('cake') || name.includes('tiramisu') || name.includes('ice')
                 case 'alcohol':
@@ -141,11 +141,11 @@ export default function BookingDiningSelector({
                 default:
                     // Curated recommendations (famous / high rated items)
                     return (
+                        cat === 'ethiopian_food' ||
                         sub.includes('tibs') ||
                         sub.includes('breakfast') ||
                         sub.includes('cocktails') ||
                         sub.includes('main') ||
-                        sub.includes('dessert') ||
                         sub.includes('coffee') ||
                         sub.includes('beer') ||
                         sub.includes('vegetarian')

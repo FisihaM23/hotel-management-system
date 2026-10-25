@@ -26,7 +26,7 @@ $conn = getConnection();
 $conn->query("CREATE TABLE IF NOT EXISTS menu_items (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
-  category ENUM('food', 'alcoholic_drink', 'soft_drink') NOT NULL DEFAULT 'food',
+  category VARCHAR(50) NOT NULL DEFAULT 'food',
   sub_category VARCHAR(100) DEFAULT 'General',
   price DECIMAL(10,2) NOT NULL,
   description TEXT,
@@ -36,6 +36,7 @@ $conn->query("CREATE TABLE IF NOT EXISTS menu_items (
   is_available TINYINT DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
+$conn->query("ALTER TABLE menu_items MODIFY COLUMN category VARCHAR(50) NOT NULL DEFAULT 'food'");
 
 $conn->query("CREATE TABLE IF NOT EXISTS dining_orders (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -261,12 +262,16 @@ switch ($method) {
             $where = [];
             $types = '';
             $params = [];
-            if ($category !== '') {
-                $where[] = 'category = ?';
-                $types .= 's';
-                $params[] = $category;
+            if ($category !== '' && $category !== 'all') {
+                if ($category === 'ethiopian_food' || $category === 'ethiopian') {
+                    $where[] = "(category = 'ethiopian_food' OR sub_category LIKE '%Ethiopian%')";
+                } else {
+                    $where[] = 'category = ?';
+                    $types .= 's';
+                    $params[] = $category;
+                }
             }
-            if ($subCategory !== '') {
+            if ($subCategory !== '' && $subCategory !== 'All') {
                 $where[] = 'sub_category = ?';
                 $types .= 's';
                 $params[] = $subCategory;
@@ -308,6 +313,14 @@ switch ($method) {
         $cat = $d['category'];
         $sub = $d['sub_category'] ?? 'General';
         $price = (float) $d['price'];
+
+        // Enforce minimum price of at least 150 ETB for food items
+        if (in_array($cat, ['food', 'ethiopian_food'], true)) {
+            if ($price < 150.00) {
+                json_fail(400, 'Minimum price for food and Ethiopian dishes must be at least 150 ETB');
+            }
+        }
+
         $desc = $d['description'] ?? '';
         $img = $d['image_url'] ?? '';
         $abv = !empty($d['alcohol_by_volume']) ? $d['alcohol_by_volume'] : null;
@@ -331,6 +344,14 @@ switch ($method) {
         $cat = $d['category'] ?? 'food';
         $sub = $d['sub_category'] ?? 'General';
         $price = (float) ($d['price'] ?? 0);
+
+        // Enforce minimum price of at least 150 ETB for food items
+        if (in_array($cat, ['food', 'ethiopian_food'], true)) {
+            if ($price < 150.00) {
+                json_fail(400, 'Minimum price for food and Ethiopian dishes must be at least 150 ETB');
+            }
+        }
+
         $desc = $d['description'] ?? '';
         $img = $d['image_url'] ?? '';
         $abv = !empty($d['alcohol_by_volume']) ? $d['alcohol_by_volume'] : null;

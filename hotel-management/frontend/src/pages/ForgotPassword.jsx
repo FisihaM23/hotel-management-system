@@ -32,13 +32,13 @@ export default function ForgotPassword() {
 
     return (
         <div className="login-page">
-            <div className="login-card" style={{ maxWidth: 460 }}>
+            <div className="login-card" style={{ maxWidth: 460, boxShadow: 'none' }}>
                 <div className="login-logo">
                     <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
                         <Hotel size={34} color="#fff" />
                     </div>
-                    <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111' }}>Forgot Password</h1>
-                    <p style={{ color: '#6b7280', fontSize: 14 }}>Enter your account email to generate a reset link</p>
+                    <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tp-ink)' }}>Forgot Password</h1>
+                    <p style={{ color: 'var(--tp-mute)', fontSize: 13 }}>Enter your account email to generate a reset link</p>
                 </div>
 
                 {sent ? (
@@ -46,10 +46,10 @@ export default function ForgotPassword() {
                         <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
                             <CheckCircle2 size={32} color="#16a34a" />
                         </div>
-                        <h3 style={{ fontSize: 18, fontWeight: 700, color: '#111827', marginBottom: 6 }}>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--tp-ink)', marginBottom: 6 }}>
                             Password Reset Link Ready
                         </h3>
-                        <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 18 }}>
+                        <p style={{ fontSize: 13, color: 'var(--tp-mute)', marginBottom: 18 }}>
                             {emailSent
                                 ? <>A reset link was emailed to <strong>{email}</strong>. You can also use the direct link below.</>
                                 : <>Reset link generated for <strong>{email}</strong>.</>}

@@ -2,6 +2,7 @@ import { Component } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import safeStorage from './utils/storage'
 import Layout from './components/Layout'
 
 class ErrorBoundary extends Component {
@@ -69,8 +70,8 @@ class ErrorBoundary extends Component {
               <button
                 type="button"
                 onClick={() => {
-                  localStorage.removeItem('hms_token')
-                  localStorage.removeItem('hms_user')
+                  safeStorage.removeItem('hms_token')
+                  safeStorage.removeItem('hms_user')
                   window.location.href = '/login'
                 }}
                 style={{
@@ -112,6 +113,8 @@ import CustomerPortal from './pages/CustomerPortal'
 import Invoices from './pages/Invoices'
 import Dining from './pages/Dining'
 import PaymentSuccess from './pages/PaymentSuccess'
+import Landing from './pages/Landing'
+import { ThemeProvider } from './context/ThemeContext'
 
 function ProtectedRoute({ children, roles }) {
   const { user } = useAuth()
@@ -125,27 +128,38 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
-      <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
+      {/* ── 1. PUBLIC HOTEL & PARK DASHBOARD (DEFAULT FOR ALL NEWCOMERS) ──────── */}
+      {/* Newcomer customer clicking the link automatically sees the hotel & park dashboard pages without sign-in */}
+      <Route path="/" element={<Landing />} />
+      <Route path="/landing" element={<Landing />} />
+      <Route path="/hotel-park" element={<Landing />} />
+
+      {/* ── 2. AUTHENTICATION (When visitor is comfortable and decides to register/sign-in) ── */}
+      <Route path="/login" element={!user ? <Login /> : <Navigate to={user.role === 'customer' ? '/' : '/dashboard'} replace />} />
+      <Route path="/register" element={!user ? <Register /> : <Navigate to={user.role === 'customer' ? '/' : '/dashboard'} replace />} />
       <Route path="/forgot-password" element={!user ? <ForgotPassword /> : <Navigate to="/" replace />} />
       <Route path="/reset-password" element={!user ? <ResetPassword /> : <Navigate to="/" replace />} />
 
-      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Dashboard />} />
-        <Route path="rooms" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Rooms /></ProtectedRoute>} />
-        <Route path="guests" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Guests /></ProtectedRoute>} />
-        <Route path="bookings" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Bookings /></ProtectedRoute>} />
-        <Route path="payments" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Payments /></ProtectedRoute>} />
-        <Route path="housekeeping" element={<ProtectedRoute roles={['admin', 'manager', 'housekeeping']}><Housekeeping /></ProtectedRoute>} />
-        <Route path="maintenance" element={<ProtectedRoute roles={['admin', 'manager', 'maintenance']}><Maintenance /></ProtectedRoute>} />
-        <Route path="users" element={<ProtectedRoute roles={['admin']}><Users /></ProtectedRoute>} />
-        <Route path="reports" element={<ProtectedRoute roles={['admin', 'manager']}><Reports /></ProtectedRoute>} />
-        <Route path="invoices" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Invoices /></ProtectedRoute>} />
-        <Route path="dining" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist', 'customer']}><Dining /></ProtectedRoute>} />
-        <Route path="my-bookings" element={<ProtectedRoute roles={['customer']}><CustomerPortal /></ProtectedRoute>} />
-        <Route path="payment-success" element={<PaymentSuccess />} />
-        <Route path="profile" element={<Profile />} />
+      {/* ── 3. PROTECTED OPERATIONS LAYOUT (Staff Operations & Customer Portal) ── */}
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route path="/dashboard" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist', 'housekeeping', 'maintenance']}><Dashboard /></ProtectedRoute>} />
+        <Route path="/rooms" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Rooms /></ProtectedRoute>} />
+        <Route path="/guests" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Guests /></ProtectedRoute>} />
+        <Route path="/bookings" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Bookings /></ProtectedRoute>} />
+        <Route path="/payments" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Payments /></ProtectedRoute>} />
+        <Route path="/housekeeping" element={<ProtectedRoute roles={['admin', 'manager', 'housekeeping']}><Housekeeping /></ProtectedRoute>} />
+        <Route path="/maintenance" element={<ProtectedRoute roles={['admin', 'manager', 'maintenance']}><Maintenance /></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute roles={['admin']}><Users /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute roles={['admin', 'manager']}><Reports /></ProtectedRoute>} />
+        <Route path="/invoices" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist']}><Invoices /></ProtectedRoute>} />
+        <Route path="/dining" element={<ProtectedRoute roles={['admin', 'manager', 'receptionist', 'customer']}><Dining /></ProtectedRoute>} />
+        <Route path="/my-bookings" element={<ProtectedRoute roles={['customer']}><CustomerPortal /></ProtectedRoute>} />
+        <Route path="/payment-success" element={<PaymentSuccess />} />
+        <Route path="/profile" element={<Profile />} />
       </Route>
+
+      {/* ── 4. FALLBACK ── */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
@@ -153,12 +167,15 @@ function AppRoutes() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <AppRoutes />
-          <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
-        </BrowserRouter>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <AppRoutes />
+            <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
+          </BrowserRouter>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   )
 }
+

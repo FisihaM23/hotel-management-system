@@ -13,16 +13,16 @@ import { useAuth } from '../context/AuthContext'
 
 const categoryMeta = {
     all: { label: 'All Items', icon: Sparkles, color: '#3b82f6', bg: '#eff6ff' },
-    ethiopian: { label: '🇪🇹 Ethiopian Traditional', icon: UtensilsCrossed, color: '#16a34a', bg: '#f0fdf4' },
-    food: { label: 'Food & Cuisine', icon: UtensilsCrossed, color: '#f59e0b', bg: '#fffbeb' },
+    ethiopian_food: { label: '🇪🇹 Ethiopian Traditional Food', icon: UtensilsCrossed, color: '#16a34a', bg: '#f0fdf4' },
+    food: { label: 'International Cuisine', icon: UtensilsCrossed, color: '#f59e0b', bg: '#fffbeb' },
     alcoholic_drink: { label: 'Alcoholic Drinks & Bar', icon: Wine, color: '#ef4444', bg: '#fef2f2' },
     soft_drink: { label: 'Soft Drinks & Beverages', icon: Coffee, color: '#10b981', bg: '#f0fdf4' }
 }
 
 const emptyItemForm = {
     name: '',
-    category: 'food',
-    sub_category: 'Main Course',
+    category: 'ethiopian_food',
+    sub_category: 'Ethiopian Traditional - Stews',
     price: '',
     description: '',
     image_url: '',
@@ -91,7 +91,8 @@ export default function Dining() {
     }, [])
 
     const isEthiopianItem = (it) => {
-        return (it.sub_category && it.sub_category.toLowerCase().includes('ethiopian')) ||
+        return it.category === 'ethiopian_food' ||
+            (it.sub_category && it.sub_category.toLowerCase().includes('ethiopian')) ||
             it.name.includes('ወጥ') || it.name.includes('ጥብስ') || it.name.includes('ክትፎ') ||
             it.name.includes('ሽሮ') || it.name.includes('ጠጅ') || it.name.includes('ጠላ') ||
             it.name.includes('አረቄ') || it.name.includes('ቢራ') || it.name.includes('ቡና') ||
@@ -102,11 +103,17 @@ export default function Dining() {
 
     // Filter items based on active category, sub-category, and search query
     const filteredItems = items.filter(it => {
-        const matchCat = selectedCategory === 'all'
-            ? true
-            : selectedCategory === 'ethiopian'
-                ? isEthiopianItem(it)
-                : it.category === selectedCategory
+        let matchCat = true
+        if (selectedCategory === 'all') {
+            matchCat = true
+        } else if (selectedCategory === 'ethiopian_food' || selectedCategory === 'ethiopian') {
+            matchCat = isEthiopianItem(it)
+        } else if (selectedCategory === 'food') {
+            matchCat = (it.category === 'food' && !isEthiopianItem(it))
+        } else {
+            matchCat = it.category === selectedCategory
+        }
+
         const matchSub = selectedSubCategory === 'All' || it.sub_category === selectedSubCategory
         const matchSearch = !search ||
             it.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -122,7 +129,8 @@ export default function Dining() {
             items
                 .filter(it => {
                     if (selectedCategory === 'all') return true
-                    if (selectedCategory === 'ethiopian') return isEthiopianItem(it)
+                    if (selectedCategory === 'ethiopian_food' || selectedCategory === 'ethiopian') return isEthiopianItem(it)
+                    if (selectedCategory === 'food') return (it.category === 'food' && !isEthiopianItem(it))
                     return it.category === selectedCategory
                 })
                 .map(it => it.sub_category)
@@ -220,14 +228,22 @@ export default function Dining() {
 
     const handleSaveItem = async (e) => {
         e.preventDefault()
+        const numPrice = parseFloat(itemForm.price)
+        if (isNaN(numPrice) || numPrice <= 0) {
+            return toast.error('Please enter a valid item price')
+        }
+        if ((itemForm.category === 'ethiopian_food' || itemForm.category === 'food') && numPrice < 150) {
+            return toast.error('Minimum price for food must be at least 150 ETB (otherwise high)')
+        }
+
         setSavingItem(true)
         try {
             if (editId) {
                 await updateMenuItem(editId, itemForm)
-                toast.success('Menu item updated')
+                toast.success('Menu item updated successfully')
             } else {
                 await createMenuItem(itemForm)
-                toast.success('Menu item added')
+                toast.success('Menu item added successfully')
             }
             setModal(false)
             loadData()
@@ -303,14 +319,14 @@ export default function Dining() {
                     <div className="stat-icon" style={{ background: '#dcfce7' }}><UtensilsCrossed color="#16a34a" /></div>
                     <div className="stat-info">
                         <h3>{items.filter(isEthiopianItem).length}</h3>
-                        <p>Ethiopian Traditional</p>
+                        <p>Ethiopian Food</p>
                     </div>
                 </div>
                 <div className="stat-card">
                     <div className="stat-icon" style={{ background: '#fef3c7' }}><UtensilsCrossed color="#d97706" /></div>
                     <div className="stat-info">
-                        <h3>{items.filter(i => i.category === 'food').length}</h3>
-                        <p>Total Food Items</p>
+                        <h3>{items.filter(i => (i.category === 'food' || i.category === 'ethiopian_food') && !isEthiopianItem(i)).length}</h3>
+                        <p>Continental Cuisine</p>
                     </div>
                 </div>
                 <div className="stat-card">
@@ -384,9 +400,11 @@ export default function Dining() {
                             const isSelected = selectedCategory === catKey
                             const count = catKey === 'all'
                                 ? items.length
-                                : catKey === 'ethiopian'
+                                : (catKey === 'ethiopian_food' || catKey === 'ethiopian')
                                     ? items.filter(isEthiopianItem).length
-                                    : items.filter(i => i.category === catKey).length
+                                    : catKey === 'food'
+                                        ? items.filter(i => (i.category === 'food' && !isEthiopianItem(i))).length
+                                        : items.filter(i => i.category === catKey).length
                             return (
                                 <div
                                     key={catKey}
@@ -884,19 +902,24 @@ export default function Dining() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Category *</label>
+                                        <label className="form-label">Dining Type / Category *</label>
                                         <select
                                             className="form-control"
                                             value={itemForm.category}
                                             onChange={e => {
                                                 const cat = e.target.value
-                                                const defaultSub = cat === 'food' ? 'Main Course' : cat === 'alcoholic_drink' ? 'Cocktails' : 'Juices'
+                                                let defaultSub = 'Main Course'
+                                                if (cat === 'ethiopian_food') defaultSub = 'Ethiopian Traditional - Stews'
+                                                else if (cat === 'food') defaultSub = 'Main Course'
+                                                else if (cat === 'alcoholic_drink') defaultSub = 'Ethiopian Beers'
+                                                else if (cat === 'soft_drink') defaultSub = 'Fresh Juices'
                                                 setItemForm({ ...itemForm, category: cat, sub_category: defaultSub })
                                             }}
                                         >
-                                            <option value="food">Food & Cuisine</option>
-                                            <option value="alcoholic_drink">Alcoholic Drink</option>
-                                            <option value="soft_drink">Soft Drink & Beverage</option>
+                                            <option value="ethiopian_food">🇪🇹 Ethiopian Traditional Food</option>
+                                            <option value="food">🍽️ International Cuisine</option>
+                                            <option value="alcoholic_drink">🍷 Alcoholic Drink & Bar</option>
+                                            <option value="soft_drink">☕ Soft Drink & Beverage</option>
                                         </select>
                                     </div>
                                 </div>
@@ -908,20 +931,68 @@ export default function Dining() {
                                             className="form-control"
                                             value={itemForm.sub_category}
                                             onChange={e => setItemForm({ ...itemForm, sub_category: e.target.value })}
-                                            placeholder={itemForm.category === 'food' ? 'Main Course, Starters, Desserts' : itemForm.category === 'alcoholic_drink' ? 'Wine, Cocktails, Beer, Spirits' : 'Juices, Sodas, Coffee'}
+                                            placeholder={itemForm.category === 'ethiopian_food' ? 'Stews, Grills, Beef, Breakfast, Fasting...' : itemForm.category === 'food' ? 'Main Course, Starters, Steaks' : itemForm.category === 'alcoholic_drink' ? 'Wine, Cocktails, Beers' : 'Juices, Sodas, Coffee'}
                                             required
                                         />
+                                        {itemForm.category === 'ethiopian_food' && (
+                                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                                                {[
+                                                    'Ethiopian Traditional - Stews',
+                                                    'Ethiopian Traditional - Grills',
+                                                    'Ethiopian Traditional - Beef',
+                                                    'Ethiopian Traditional - Vegetarian',
+                                                    'Ethiopian Traditional - Breakfast',
+                                                    'Ethiopian Traditional - Fish & Seafood'
+                                                ].map(preset => (
+                                                    <button
+                                                        key={preset}
+                                                        type="button"
+                                                        onClick={() => setItemForm({ ...itemForm, sub_category: preset })}
+                                                        style={{
+                                                            fontSize: 10,
+                                                            padding: '2px 7px',
+                                                            borderRadius: 10,
+                                                            border: itemForm.sub_category === preset ? '1px solid #16a34a' : '1px solid #e5e7eb',
+                                                            background: itemForm.sub_category === preset ? '#dcfce7' : '#f9fafb',
+                                                            color: itemForm.sub_category === preset ? '#15803d' : '#6b7280',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        {preset.replace('Ethiopian Traditional - ', '')}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Price (ETB) *</label>
+                                        <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>Price (ETB) *</span>
+                                            {(itemForm.category === 'ethiopian_food' || itemForm.category === 'food') && (
+                                                <span style={{ fontSize: 10.5, color: '#16a34a', fontWeight: 700 }}>
+                                                    Min 150 ETB Required
+                                                </span>
+                                            )}
+                                        </label>
                                         <input
                                             className="form-control"
                                             type="number"
                                             step="0.01"
+                                            min={(itemForm.category === 'ethiopian_food' || itemForm.category === 'food') ? 150 : 1}
                                             value={itemForm.price}
                                             onChange={e => setItemForm({ ...itemForm, price: e.target.value })}
+                                            placeholder={(itemForm.category === 'ethiopian_food' || itemForm.category === 'food') ? "At least 150 ETB or higher" : "Price in ETB"}
                                             required
                                         />
+                                        {(itemForm.category === 'ethiopian_food' || itemForm.category === 'food') && (
+                                            <small style={{
+                                                color: Number(itemForm.price) >= 150 ? '#16a34a' : '#dc2626',
+                                                fontSize: 11, marginTop: 4, display: 'block', fontWeight: 600
+                                            }}>
+                                                {Number(itemForm.price) >= 150
+                                                    ? '✓ Valid food price (at least 150 ETB)'
+                                                    : '⚠️ Food price must be at least 150 ETB (otherwise high)'}
+                                            </small>
+                                        )}
                                     </div>
                                 </div>
 

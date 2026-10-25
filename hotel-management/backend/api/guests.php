@@ -57,7 +57,26 @@ switch ($method) {
         $stmt = $conn->prepare("INSERT INTO users (name, email, password, role, phone, address, id_proof, id_number, reason_for_stay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->bind_param('sssssssss', $name, $email, $hash, $role, $phone, $address, $id_proof, $id_number, $reason);
         executeOrFail($stmt, $conn);
-        json_ok(['id' => $conn->insert_id, 'message' => 'Guest registered successfully', 'temporary_password' => $plain]);
+        $newGuestId = $conn->insert_id;
+
+        // Welcome in-app notification directly for the newly registered guest
+        $guestTitle = "🎉 Welcome to Grand 6-Floor Hotel & Resort Park!";
+        $guestMsg = "Dear {$name}, your customer portal account ({$email}) has been provisioned. Your temporary password is: {$plain}. Experience our 6-floor luxury suites, resort gardens, and authentic Ethiopian dining feasts (Doro Wat, Special Tibs, Kitfo).";
+        $gNotif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, 'success')");
+        $gNotif->bind_param('iss', $newGuestId, $guestTitle, $guestMsg);
+        $gNotif->execute();
+
+        // Dispatch Welcome Email via Resend with multi-channel fallback
+        require_once __DIR__ . '/../config/resend.php';
+        $emailRes = sendCustomerWelcomeEmail($email, $name, ['phone' => $phone]);
+
+        json_ok([
+            'id' => $newGuestId,
+            'message' => 'Guest registered successfully',
+            'temporary_password' => $plain,
+            'email_sent' => !empty($emailRes['success']),
+            'notification_created' => true
+        ]);
         break;
 
     case 'PUT':

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import safeStorage from '../utils/storage'
 
 const BASE = 'http://localhost/hotel-management/api'
 
@@ -8,10 +9,14 @@ const api = axios.create({
     timeout: 10000
 })
 
-// Attach token
+// Attach token safely
 api.interceptors.request.use(cfg => {
-    const token = localStorage.getItem('hms_token')
-    if (token) cfg.headers.Authorization = `Bearer ${token}`
+    try {
+        const token = safeStorage.getItem('hms_token')
+        if (token) cfg.headers.Authorization = `Bearer ${token}`
+    } catch (e) {
+        // Silently continue if storage is restricted
+    }
     return cfg
 })
 
@@ -20,16 +25,21 @@ api.interceptors.response.use(
     res => res,
     err => {
         const url = err.config?.url || ''
-        const isAuthCall = url.includes('auth.php') || url.includes('test_connection.php')
-        const isAuthPage = typeof window !== 'undefined' && (
+        const method = (err.config?.method || 'get').toLowerCase()
+        const isPublicEndpoint = url.includes('auth.php') ||
+            url.includes('test_connection.php') ||
+            (method === 'get' && (url.includes('rooms.php') || url.includes('hotel_ai.php') || url.includes('dining.php')))
+        const isPublicPage = typeof window !== 'undefined' && (
             window.location.pathname.startsWith('/login') ||
             window.location.pathname.startsWith('/register') ||
             window.location.pathname.startsWith('/forgot-password') ||
-            window.location.pathname.startsWith('/reset-password')
+            window.location.pathname.startsWith('/reset-password') ||
+            window.location.pathname.startsWith('/landing') ||
+            window.location.pathname === '/'
         )
-        if (err.response?.status === 401 && !isAuthCall && !isAuthPage) {
-            localStorage.removeItem('hms_token')
-            localStorage.removeItem('hms_user')
+        if (err.response?.status === 401 && !isPublicEndpoint && !isPublicPage) {
+            safeStorage.removeItem('hms_token')
+            safeStorage.removeItem('hms_user')
             window.location.href = '/login'
         }
         return Promise.reject(err)

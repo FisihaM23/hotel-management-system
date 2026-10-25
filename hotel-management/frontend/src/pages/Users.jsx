@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Trash2, Search, KeyRound, Shield, Check, X, Copy, RefreshCw, Eye, EyeOff, ExternalLink } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, KeyRound, Shield, Check, X, Copy, RefreshCw, Eye, EyeOff, ExternalLink, UserCheck } from 'lucide-react'
 import toast from 'react-hot-toast'
 import {
     getUsers,
@@ -7,9 +7,20 @@ import {
     updateUser,
     deleteUser,
     adminResetPassword,
-    adminGenerateResetLink
+    adminGenerateResetLink,
+    login
 } from '../services/api'
+import { useAuth } from '../context/AuthContext'
 import { isValidEmail, EMAIL_POLICY_MESSAGE } from '../utils/validation'
+
+const staffQuickAccounts = [
+    { label: 'Admin', role: 'admin', email: 'befather7@gmail.com', color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '👑' },
+    { label: 'Manager', role: 'manager', email: 'manager@hotel.com', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe', icon: '🏨' },
+    { label: 'Receptionist', role: 'receptionist', email: 'receptionist@hotel.com', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', icon: '🛎️' },
+    { label: 'Customer', role: 'customer', email: 'customer@hotel.com', color: '#10b981', bg: '#f0fdf4', border: '#a7f3d0', icon: '🧳' },
+    { label: 'Housekeeping', role: 'housekeeping', email: 'housekeeping@hotel.com', color: '#f59e0b', bg: '#fffbeb', border: '#fde68a', icon: '🧹' },
+    { label: 'Maintenance', role: 'maintenance', email: 'maintenance@hotel.com', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb', icon: '🔧' },
+]
 
 const roleBadge = {
     admin: 'badge-danger',
@@ -40,6 +51,7 @@ function generateSecurePassword() {
 }
 
 export default function Users() {
+    const { loginUser } = useAuth()
     const [users, setUsers] = useState([])
     const [loading, setLoading] = useState(true)
     const [modal, setModal] = useState(false)
@@ -58,6 +70,23 @@ export default function Users() {
     const [generatedLink, setGeneratedLink] = useState('')
     const [resetLoading, setResetLoading] = useState(false)
     const [savedTempPassResult, setSavedTempPassResult] = useState(null)
+
+    const handleQuickStaffLogin = async (staffEmail) => {
+        try {
+            const res = await login({ email: staffEmail, password: 'password123' })
+            const { token, user } = res.data
+            if (token && user) {
+                loginUser(token, user)
+                toast.success(`Switched role to ${user.name} (${user.role})`)
+                setTimeout(() => {
+                    if (user.role === 'customer') window.location.href = '/landing'
+                    else window.location.href = '/'
+                }, 500)
+            }
+        } catch {
+            toast.error(`Could not switch to ${staffEmail}`)
+        }
+    }
 
     const load = () => {
         setLoading(true)
@@ -253,21 +282,95 @@ export default function Users() {
                     </div>
                 </div>
 
-                <button
-                    className="btn btn-primary"
-                    onClick={openAdd}
-                    style={{
-                        padding: '10px 18px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        fontWeight: 600,
-                        fontSize: 13,
-                        boxShadow: '0 4px 14px rgba(56, 189, 248, 0.35)'
-                    }}
-                >
-                    <Plus size={16} /> Create User Account
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                        className="btn btn-primary"
+                        onClick={openAdd}
+                        style={{
+                            padding: '10px 18px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            fontWeight: 600,
+                            fontSize: 13,
+                            boxShadow: '0 4px 14px rgba(56, 189, 248, 0.35)'
+                        }}
+                    >
+                        <Plus size={16} /> Create User Account
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => {
+                            setFilterRole(filterRole === 'all' ? 'receptionist' : 'all')
+                            toast('Filtered staff users — click "Remove Staff" on any row to delete', { icon: 'ℹ️' })
+                        }}
+                        style={{
+                            padding: '10px 16px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 7,
+                            fontWeight: 600,
+                            fontSize: 13,
+                            borderColor: 'rgba(239, 68, 68, 0.45)',
+                            color: '#ef4444',
+                            background: 'rgba(239, 68, 68, 0.08)'
+                        }}
+                    >
+                        <Trash2 size={15} /> Remove Staff User
+                    </button>
+                </div>
+            </div>
+
+            {/* HORIZONTAL STAFF USER BAR (STORED FROM SIGN-IN PAGE) */}
+            <div style={{
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                borderRadius: 12,
+                padding: '12px 16px',
+                marginBottom: 16
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Shield size={14} color="#38bdf8" />
+                        Staff User Accounts & Fast Role Switcher (Stored from Sign-in Page)
+                    </div>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>
+                        Horizontal quick access to test all staff roles
+                    </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+                    {staffQuickAccounts.map(a => (
+                        <button
+                            key={a.email}
+                            type="button"
+                            onClick={() => handleQuickStaffLogin(a.email)}
+                            title={`Switch / Login to ${a.label} (${a.email})`}
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '8px 14px',
+                                borderRadius: 10,
+                                border: `1.5px solid ${a.border}`,
+                                background: a.bg,
+                                color: a.color,
+                                fontWeight: 700,
+                                fontSize: 12,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
+                                transition: 'all 0.15s ease'
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)' }}
+                            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)' }}
+                        >
+                            <span style={{ fontSize: 15 }}>{a.icon}</span>
+                            <span>{a.label}</span>
+                            <span style={{ fontSize: 10, opacity: 0.85, fontWeight: 500 }}>({a.email})</span>
+                        </button>
+                    ))}
+                </div>
             </div>
 
             <div className="page-header" style={{ marginBottom: 12 }}>
@@ -407,43 +510,65 @@ export default function Users() {
                                                 </td>
                                                 <td style={{ fontSize: 12 }}>{new Date(u.created_at).toLocaleDateString()}</td>
                                                 <td>
-                                                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                                                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', whiteSpace: 'nowrap' }}>
                                                         {/* Password Reset / Governance Button */}
                                                         <button
                                                             className="btn btn-outline btn-sm"
                                                             onClick={() => openPasswordModal(u)}
                                                             title="Admin Password Reset / Generate Secure Link"
                                                             style={{
-                                                                display: 'flex',
+                                                                display: 'inline-flex',
                                                                 alignItems: 'center',
                                                                 gap: 4,
+                                                                padding: '5px 9px',
                                                                 borderColor: 'rgba(56, 189, 248, 0.4)',
                                                                 color: '#38bdf8',
-                                                                background: 'rgba(56, 189, 248, 0.08)'
+                                                                background: 'rgba(56, 189, 248, 0.08)',
+                                                                fontSize: 11,
+                                                                fontWeight: 600
                                                             }}
                                                         >
                                                             <KeyRound size={13} />
-                                                            <span style={{ fontSize: 11, fontWeight: 600 }}>Reset PW</span>
+                                                            <span>Reset PW</span>
                                                         </button>
 
                                                         {/* Edit User Button */}
                                                         <button
-                                                            className="btn btn-outline btn-sm btn-icon"
+                                                            className="btn btn-outline btn-sm"
                                                             onClick={() => openEdit(u)}
                                                             title="Edit User Profile"
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 4,
+                                                                padding: '5px 9px',
+                                                                fontSize: 11,
+                                                                fontWeight: 600
+                                                            }}
                                                         >
                                                             <Pencil size={13} />
+                                                            <span>Edit</span>
                                                         </button>
 
-                                                        {/* Delete User Button (Protected for main admin) */}
+                                                        {/* Delete / Remove Staff User Button (Horizontal with Label) */}
                                                         <button
-                                                            className="btn btn-danger btn-sm btn-icon"
+                                                            className="btn btn-danger btn-sm"
                                                             onClick={() => handleDelete(u)}
                                                             disabled={isMainAdmin}
-                                                            title={isMainAdmin ? 'Primary Admin cannot be deleted' : 'Delete User'}
-                                                            style={{ opacity: isMainAdmin ? 0.35 : 1, cursor: isMainAdmin ? 'not-allowed' : 'pointer' }}
+                                                            title={isMainAdmin ? 'Primary Admin cannot be deleted' : `Remove ${u.name} (${u.role})`}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: 5,
+                                                                padding: '5px 10px',
+                                                                fontSize: 11,
+                                                                fontWeight: 700,
+                                                                opacity: isMainAdmin ? 0.35 : 1,
+                                                                cursor: isMainAdmin ? 'not-allowed' : 'pointer'
+                                                            }}
                                                         >
                                                             <Trash2 size={13} />
+                                                            <span>{u.role === 'customer' ? 'Remove User' : 'Remove Staff'}</span>
                                                         </button>
                                                     </div>
                                                 </td>

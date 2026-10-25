@@ -7,9 +7,10 @@ import {
 import { useAuth } from '../context/AuthContext'
 
 const allNav = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'manager', 'receptionist', 'housekeeping', 'maintenance'] },
-    { to: '/dining', icon: UtensilsCrossed, label: 'Dining & Bar', roles: ['admin', 'manager', 'receptionist', 'customer'] },
+    { to: '/', icon: Hotel, label: 'Hotel & Park Showcase', roles: ['customer', 'admin', 'manager', 'receptionist'] },
+    { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'manager', 'receptionist', 'housekeeping', 'maintenance'] },
     { to: '/my-bookings', icon: BookOpen, label: 'My Bookings', roles: ['customer'] },
+    { to: '/dining', icon: UtensilsCrossed, label: 'Dining & Bar', roles: ['admin', 'manager', 'receptionist', 'customer'] },
     { to: '/rooms', icon: BedDouble, label: 'Rooms', roles: ['admin', 'manager', 'receptionist'] },
     { to: '/guests', icon: Users, label: 'Guests', roles: ['admin', 'manager', 'receptionist'] },
     { to: '/bookings', icon: CalendarCheck, label: 'Bookings', roles: ['admin', 'manager', 'receptionist'] },

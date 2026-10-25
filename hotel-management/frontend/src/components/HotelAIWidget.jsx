@@ -7,6 +7,7 @@ import {
 import toast from 'react-hot-toast'
 import { chatHotelAI, getHotelAIHistory, clearHotelAIHistory } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 
 const UI_TEXT = {
     en: {
@@ -63,6 +64,8 @@ export default function HotelAIWidget({
     initialDates = null 
 }) {
     const { user } = useAuth()
+    const { currentTheme } = useTheme()
+    const isLight = currentTheme?.colorScheme === 'light'
     const isControlled = typeof controlledIsOpen === 'boolean'
     const [internalOpen, setInternalOpen] = useState(false)
     const isOpen = isControlled ? controlledIsOpen : internalOpen
@@ -269,195 +272,380 @@ export default function HotelAIWidget({
             return (
                 <p 
                     key={idx} 
-                    className="mb-1 last:mb-0 text-[11px] leading-relaxed"
+                    style={{
+                        margin: '0 0 4px',
+                        fontSize: 11.5,
+                        lineHeight: 1.55,
+                        color: 'inherit'
+                    }}
                     dangerouslySetInnerHTML={{ __html: processed }}
                 />
             )
         })
     }
 
+    // Dynamic theme palette for the AI widget
+    const th = isLight ? {
+        windowBg: '#ffffff',
+        windowBorder: '#cbd5e1',
+        windowShadow: '0 16px 40px rgba(0, 0, 0, 0.15)',
+        headerBg: '#f8fafc',
+        headerBorder: '#e2e8f0',
+        titleColor: '#0f172a',
+        statusBg: '#dcfce7',
+        statusText: '#15803d',
+        statusBorder: '#86efac',
+        langInactiveText: '#64748b',
+        langActiveBg: 'var(--tp-acc, #059669)',
+        langActiveText: '#ffffff',
+        headerBtnColor: '#64748b',
+        bodyBg: '#ffffff',
+        aiBubbleBg: '#f1f5f9',
+        aiBubbleBorder: '#e2e8f0',
+        aiBubbleText: '#0f172a',
+        userBubbleBg: 'linear-gradient(135deg, var(--tp-acc, #059669) 0%, #047857 100%)',
+        userBubbleText: '#ffffff',
+        cardBg: '#ffffff',
+        cardBorder: '#cbd5e1',
+        cardText: '#0f172a',
+        cardSub: '#64748b',
+        chipBg: '#f1f5f9',
+        chipBorder: '#cbd5e1',
+        chipText: '#0f172a',
+        inputBg: '#ffffff',
+        inputBorder: '#cbd5e1',
+        inputText: '#0f172a',
+        inputPlaceholder: '#94a3b8',
+        inputFormBg: '#f8fafc',
+        inputFormBorder: '#e2e8f0'
+    } : {
+        windowBg: 'linear-gradient(180deg, #091222 0%, #060b14 100%)',
+        windowBorder: 'rgba(56, 189, 248, 0.3)',
+        windowShadow: '0 15px 40px -10px rgba(0, 0, 0, 0.75), 0 0 15px rgba(14, 165, 233, 0.2)',
+        headerBg: '#0f172a',
+        headerBorder: '#1e293b',
+        titleColor: '#ffffff',
+        statusBg: '#052e16',
+        statusText: '#4ade80',
+        statusBorder: 'rgba(22, 101, 52, 0.6)',
+        langInactiveText: '#94a3b8',
+        langActiveBg: '#0284c7',
+        langActiveText: '#ffffff',
+        headerBtnColor: '#94a3b8',
+        bodyBg: '#060b14',
+        aiBubbleBg: '#0f172a',
+        aiBubbleBorder: '#1e293b',
+        aiBubbleText: '#e2e8f0',
+        userBubbleBg: 'linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%)',
+        userBubbleText: '#ffffff',
+        cardBg: '#0f172a',
+        cardBorder: 'rgba(56, 189, 248, 0.25)',
+        cardText: '#ffffff',
+        cardSub: '#94a3b8',
+        chipBg: 'rgba(12, 26, 48, 0.8)',
+        chipBorder: 'rgba(56, 189, 248, 0.3)',
+        chipText: '#bae6fd',
+        inputBg: '#020617',
+        inputBorder: '#1e293b',
+        inputText: '#ffffff',
+        inputPlaceholder: '#64748b',
+        inputFormBg: '#0f172a',
+        inputFormBorder: '#1e293b'
+    }
+
     return (
-        <div className="fixed bottom-4 right-4 z-40 pointer-events-auto">
-            {/* 1. SMALL COMPACT MINIMIZED BUTTON ON THE RIGHT SIDE (DOES NOT COVER THE DASHBOARD) */}
+        <div style={{ position: 'fixed', bottom: 16, right: 16, zIndex: 1100, pointerEvents: 'auto' }}>
+            {/* 1. SMALL COMPACT MINIMIZED BUTTON ON THE RIGHT SIDE */}
             {!isOpen && (
                 <button
                     id="hotel-ai-minimized-btn"
                     type="button"
                     onClick={() => setOpenState(true)}
-                    className="group flex items-center gap-2 px-3 py-2 rounded-full shadow-lg border transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer"
                     style={{
-                        background: 'linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%)',
-                        borderColor: 'rgba(56, 189, 248, 0.4)',
-                        boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)'
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 14px',
+                        borderRadius: 30,
+                        background: isLight 
+                            ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' 
+                            : 'linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%)',
+                        border: isLight ? '1.5px solid #059669' : '1.5px solid rgba(56, 189, 248, 0.4)',
+                        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+                        cursor: 'pointer',
+                        color: '#ffffff'
                     }}
                     title="Open Hotel AI (EN / አማርኛ)"
                 >
-                    <div className="relative">
-                        <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-                        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                        </span>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <Sparkles size={16} color="#fde047" />
                     </div>
 
-                    <div className="flex items-center gap-1.5 text-left leading-none">
-                        <span className="text-xs font-bold text-white tracking-wide">Hotel AI</span>
-                        <span className="text-[9px] uppercase font-semibold bg-white/20 text-sky-100 px-1 py-0.5 rounded">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, lineHeight: 1 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: '#ffffff', letterSpacing: '0.02em' }}>
+                            Hotel AI
+                        </span>
+                        <span style={{ fontSize: 9, textTransform: 'uppercase', fontWeight: 700, background: 'rgba(255,255,255,0.22)', color: '#ffffff', padding: '2px 5px', borderRadius: 4 }}>
                             EN | አማ
                         </span>
                     </div>
                 </button>
             )}
 
-            {/* 2. SMALL COMPACT AI CHAT WINDOW (COMPACT SIZE, NEVER COVERS FULL DASHBOARD) */}
+            {/* 2. SMALL COMPACT AI CHAT WINDOW (THEME-ADAPTIVE & READABLE) */}
             {isOpen && (
                 <div 
-                    className="flex flex-col w-[310px] sm:w-[330px] h-[440px] max-h-[62vh] rounded-xl shadow-2xl border overflow-hidden"
+                    id="hotel-ai-chat-window"
                     style={{
-                        background: 'linear-gradient(180deg, #091222 0%, #060b14 100%)',
-                        borderColor: 'rgba(56, 189, 248, 0.3)',
-                        boxShadow: '0 15px 40px -10px rgba(0, 0, 0, 0.75), 0 0 15px rgba(14, 165, 233, 0.2)'
+                        display: 'flex',
+                        flexDirection: 'column',
+                        width: 330,
+                        maxWidth: 'calc(100vw - 24px)',
+                        height: 450,
+                        maxHeight: '65vh',
+                        borderRadius: 14,
+                        background: th.windowBg,
+                        border: `1.5px solid ${th.windowBorder}`,
+                        boxShadow: th.windowShadow,
+                        overflow: 'hidden',
+                        color: th.titleColor
                     }}
                 >
                     {/* COMPACT HEADER */}
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-sky-950/80 bg-slate-900/90 backdrop-blur-md flex-shrink-0">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                            <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm">
-                                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <div 
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            borderBottom: `1px solid ${th.headerBorder}`,
+                            background: th.headerBg,
+                            flexShrink: 0
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                            <div 
+                                style={{
+                                    width: 24,
+                                    height: 24,
+                                    borderRadius: 6,
+                                    background: isLight 
+                                        ? 'linear-gradient(135deg, #059669, #10b981)' 
+                                        : 'linear-gradient(135deg, #0284c7, #4f46e5)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    flexShrink: 0
+                                }}
+                            >
+                                <Sparkles size={13} color="#fde047" />
                             </div>
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-1">
-                                    <h3 className="text-xs font-bold text-white tracking-wide truncate">{t.title}</h3>
-                                    <span className="text-[8px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800/60 px-1 py-0.2 rounded">
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <h3 style={{ fontSize: 12.5, fontWeight: 800, color: th.titleColor, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {t.title}
+                                    </h3>
+                                    <span 
+                                        style={{
+                                            fontSize: 8.5,
+                                            fontWeight: 700,
+                                            background: th.statusBg,
+                                            color: th.statusText,
+                                            border: `1px solid ${th.statusBorder}`,
+                                            padding: '1px 5px',
+                                            borderRadius: 4
+                                        }}
+                                    >
                                         {t.status}
                                     </span>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-1 text-slate-400 flex-shrink-0">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                             {/* LANGUAGE SWITCHER */}
-                            <div className="flex items-center bg-slate-800/90 p-0.5 rounded border border-slate-700/60">
+                            <div style={{ display: 'flex', alignItems: 'center', background: isLight ? '#f1f5f9' : '#1e293b', padding: 2, borderRadius: 6, border: `1px solid ${th.headerBorder}` }}>
                                 <button
                                     type="button"
                                     onClick={() => toggleLanguage('en')}
-                                    className={`px-1 py-0.2 text-[9px] font-bold rounded transition-colors ${
-                                        lang === 'en' ? 'bg-sky-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'
-                                    }`}
+                                    style={{
+                                        padding: '1px 6px',
+                                        fontSize: 9,
+                                        fontWeight: 800,
+                                        borderRadius: 4,
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        background: lang === 'en' ? th.langActiveBg : 'transparent',
+                                        color: lang === 'en' ? th.langActiveText : th.langInactiveText
+                                    }}
                                 >
                                     EN
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => toggleLanguage('am')}
-                                    className={`px-1 py-0.2 text-[9px] font-bold rounded transition-colors ${
-                                        lang === 'am' ? 'bg-sky-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'
-                                    }`}
+                                    style={{
+                                        padding: '1px 6px',
+                                        fontSize: 9,
+                                        fontWeight: 800,
+                                        borderRadius: 4,
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        background: lang === 'am' ? th.langActiveBg : 'transparent',
+                                        color: lang === 'am' ? th.langActiveText : th.langInactiveText
+                                    }}
                                 >
                                     አማ
                                 </button>
                             </div>
 
                             <button 
+                                type="button"
                                 onClick={handleClearChat}
                                 title={t.resetConfirm}
-                                className="p-1 hover:text-white hover:bg-slate-800 rounded transition-colors"
+                                style={{ padding: 4, background: 'none', border: 'none', color: th.headerBtnColor, cursor: 'pointer', display: 'flex' }}
                             >
-                                <RotateCcw className="w-3 h-3" />
+                                <RotateCcw size={13} />
                             </button>
                             
-                            {/* MINIMIZE TO SMALL SIZE */}
                             <button 
+                                type="button"
                                 onClick={() => setOpenState(false)}
                                 title="Minimize"
-                                className="p-1 hover:text-sky-300 hover:bg-slate-800 rounded transition-colors"
+                                style={{ padding: 4, background: 'none', border: 'none', color: th.headerBtnColor, cursor: 'pointer', display: 'flex' }}
                             >
-                                <Minus className="w-3.5 h-3.5" />
+                                <Minus size={14} />
                             </button>
 
                             <button 
+                                type="button"
                                 onClick={() => setOpenState(false)}
                                 title="Close"
-                                className="p-1 hover:text-rose-400 hover:bg-slate-800 rounded transition-colors"
+                                style={{ padding: 4, background: 'none', border: 'none', color: isLight ? '#dc2626' : '#f87171', cursor: 'pointer', display: 'flex' }}
                             >
-                                <X className="w-3.5 h-3.5" />
+                                <X size={14} />
                             </button>
                         </div>
                     </div>
 
                     {/* COMPACT MESSAGES SCROLL CONTAINER */}
-                    <div className="flex-1 p-2.5 overflow-y-auto space-y-2.5 text-slate-200 scrollbar-thin scrollbar-thumb-slate-700">
+                    <div 
+                        style={{
+                            flex: 1,
+                            padding: 10,
+                            overflowY: 'auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 10,
+                            background: th.bodyBg
+                        }}
+                    >
                         {messages.map((msg) => (
                             <div 
                                 key={msg.id} 
-                                className={`flex flex-col ${msg.sender === 'customer' ? 'items-end' : 'items-start'}`}
+                                style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: msg.sender === 'customer' ? 'flex-end' : 'flex-start'
+                                }}
                             >
-                                <div className="flex items-center gap-1 mb-0.5 px-1">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2, padding: '0 4px' }}>
                                     {msg.sender === 'hotel_ai' ? (
-                                        <span className="text-[9px] font-bold text-sky-400 tracking-wider uppercase flex items-center gap-0.5">
-                                            <Sparkles className="w-2.5 h-2.5 text-amber-300" />
+                                        <span style={{ fontSize: 9.5, fontWeight: 800, color: isLight ? '#0284c7' : '#38bdf8', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                            <Sparkles size={10} color="#eab308" />
                                             {lang === 'am' ? 'ሆቴል አይ' : 'Hotel AI'}
                                         </span>
                                     ) : (
-                                        <span className="text-[9px] font-semibold text-slate-400">
+                                        <span style={{ fontSize: 9.5, fontWeight: 700, color: th.cardSub }}>
                                             {lang === 'am' ? 'እርስዎ' : 'You'}
                                         </span>
                                     )}
                                     {msg.time && (
-                                        <span className="text-[8px] text-slate-500">{msg.time}</span>
+                                        <span style={{ fontSize: 8.5, color: th.cardSub }}>{msg.time}</span>
                                     )}
                                 </div>
 
-                                {/* MESSAGE BUBBLE (COMPACT) */}
+                                {/* MESSAGE BUBBLE WITH GUARANTEED HIGH-CONTRAST READABLE WORDS */}
                                 <div 
-                                    className={`max-w-[94%] rounded-xl px-2.5 py-1.5 text-[11px] shadow-sm ${
-                                        msg.sender === 'customer'
-                                            ? 'bg-gradient-to-r from-sky-600 to-blue-700 text-white rounded-br-none'
-                                            : 'bg-slate-900 border border-slate-800/90 text-slate-200 rounded-bl-none'
-                                    }`}
+                                    style={{
+                                        maxWidth: '92%',
+                                        borderRadius: 12,
+                                        borderBottomRightRadius: msg.sender === 'customer' ? 2 : 12,
+                                        borderBottomLeftRadius: msg.sender === 'hotel_ai' ? 2 : 12,
+                                        padding: '7px 11px',
+                                        fontSize: 11.5,
+                                        lineHeight: 1.5,
+                                        background: msg.sender === 'customer' ? th.userBubbleBg : th.aiBubbleBg,
+                                        border: msg.sender === 'customer' ? 'none' : `1px solid ${th.aiBubbleBorder}`,
+                                        color: msg.sender === 'customer' ? th.userBubbleText : th.aiBubbleText,
+                                        boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                                    }}
                                 >
                                     {renderFormattedText(msg.text)}
                                 </div>
 
-                                {/* PREDICTED ROOMS (COMPACT) */}
+                                {/* PREDICTED ROOMS */}
                                 {msg.predicted_rooms && msg.predicted_rooms.length > 0 && (
-                                    <div className="w-full mt-2 space-y-1.5">
-                                        <div className="flex items-center justify-between text-[10px] font-semibold text-sky-400 px-1">
-                                            <span className="flex items-center gap-1">
-                                                <BedDouble className="w-3 h-3" />
+                                    <div style={{ width: '100%', marginTop: 8 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 700, color: isLight ? '#0284c7' : '#38bdf8', padding: '0 4px', marginBottom: 6 }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <BedDouble size={12} />
                                                 {t.predictedRoomsLabel} ({msg.predicted_rooms.length})
                                             </span>
-                                            <span className="text-emerald-400 text-[9px]">
+                                            <span style={{ color: '#16a34a', fontSize: 9.5, fontWeight: 700 }}>
                                                 ✓ {t.guaranteed}
                                             </span>
                                         </div>
 
-                                        <div className="space-y-1.5">
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                             {msg.predicted_rooms.map((room) => (
                                                 <div 
                                                     key={room.id}
-                                                    className="p-2 rounded-lg border border-sky-900/40 bg-slate-900/70 flex items-center justify-between gap-1.5 hover:border-sky-500/50 transition-all"
+                                                    style={{
+                                                        padding: 8,
+                                                        borderRadius: 8,
+                                                        border: `1px solid ${th.cardBorder}`,
+                                                        background: th.cardBg,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        gap: 6
+                                                    }}
                                                 >
-                                                    <div className="min-w-0">
-                                                        <div className="flex items-center gap-1">
-                                                            <span className="font-bold text-white text-xs">
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                            <span style={{ fontWeight: 800, color: th.cardText, fontSize: 12 }}>
                                                                 #{room.room_number}
                                                             </span>
-                                                            <span className="text-[9px] font-bold uppercase px-1 py-0.2 rounded bg-sky-950 text-sky-300 border border-sky-800">
+                                                            <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', padding: '1px 5px', borderRadius: 4, background: isLight ? '#e0f2fe' : '#082f49', color: isLight ? '#0369a1' : '#7dd3fc', border: isLight ? '1px solid #bae6fd' : '1px solid #0369a1' }}>
                                                                 {lang === 'am' ? (room.type_label_am || room.type) : (room.type_label_en || room.type)}
                                                             </span>
                                                         </div>
-                                                        <span className="text-[10px] text-emerald-400 font-bold block mt-0.5">
+                                                        <span style={{ fontSize: 10.5, color: '#16a34a', fontWeight: 800, display: 'block', marginTop: 2 }}>
                                                             ${room.price_per_night} {lang === 'am' ? '/ሌሊት' : '/night'}
                                                         </span>
                                                     </div>
 
                                                     <button
+                                                        type="button"
                                                         onClick={() => handleRoomSelect(room)}
-                                                        className="py-1 px-2 rounded bg-sky-500/20 hover:bg-sky-500 text-sky-300 hover:text-slate-950 text-[10px] font-bold transition-all flex items-center gap-0.5 border border-sky-500/40 flex-shrink-0"
+                                                        style={{
+                                                            padding: '4px 8px',
+                                                            borderRadius: 6,
+                                                            background: isLight ? '#0284c7' : 'rgba(56,189,248,0.2)',
+                                                            color: isLight ? '#ffffff' : '#38bdf8',
+                                                            border: isLight ? 'none' : '1px solid rgba(56,189,248,0.4)',
+                                                            fontSize: 10,
+                                                            fontWeight: 800,
+                                                            cursor: 'pointer',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 3,
+                                                            flexShrink: 0
+                                                        }}
                                                     >
-                                                        {t.reserveRoom(room.room_number)}
-                                                        <ArrowRight className="w-2.5 h-2.5" />
+                                                        <span>{t.reserveRoom(room.room_number)}</span>
+                                                        <ArrowRight size={11} />
                                                     </button>
                                                 </div>
                                             ))}
@@ -465,37 +653,57 @@ export default function HotelAIWidget({
                                     </div>
                                 )}
 
-                                {/* AVAILABLE DINING (COMPACT) */}
+                                {/* AVAILABLE DINING */}
                                 {msg.available_dining && msg.available_dining.length > 0 && (
-                                    <div className="w-full mt-2 space-y-1.5">
-                                        <div className="flex items-center justify-between text-[10px] font-semibold text-amber-400 px-1">
-                                            <span className="flex items-center gap-1">
-                                                <Utensils className="w-3 h-3" />
+                                    <div style={{ width: '100%', marginTop: 8 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 700, color: '#d97706', padding: '0 4px', marginBottom: 6 }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Utensils size={12} />
                                                 {t.availableDiningLabel} ({msg.available_dining.length})
                                             </span>
-                                            <span className="text-emerald-400 text-[9px]">
+                                            <span style={{ color: '#16a34a', fontSize: 9.5 }}>
                                                 {t.kitchenActive}
                                             </span>
                                         </div>
 
-                                        <div className="space-y-1">
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                                             {msg.available_dining.map((item) => (
                                                 <div 
                                                     key={item.id}
-                                                    className="p-1.5 rounded-lg border border-amber-900/30 bg-slate-900/70 flex items-center justify-between gap-1.5"
+                                                    style={{
+                                                        padding: '6px 8px',
+                                                        borderRadius: 8,
+                                                        border: `1px solid ${th.cardBorder}`,
+                                                        background: th.cardBg,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        gap: 6
+                                                    }}
                                                 >
-                                                    <div className="min-w-0">
-                                                        <div className="text-[11px] font-bold text-white truncate">
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ fontSize: 11, fontWeight: 700, color: th.cardText, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                             {item.name}
                                                         </div>
-                                                        <span className="text-[10px] text-amber-400 font-semibold">
+                                                        <span style={{ fontSize: 10, color: '#d97706', fontWeight: 800 }}>
                                                             ${item.price}
                                                         </span>
                                                     </div>
 
                                                     <button
+                                                        type="button"
                                                         onClick={() => handleDiningSelect(item)}
-                                                        className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-[9px] font-bold border border-amber-500/40 transition-colors flex-shrink-0"
+                                                        style={{
+                                                            padding: '3px 8px',
+                                                            borderRadius: 6,
+                                                            background: isLight ? '#fef3c7' : 'rgba(245,158,11,0.2)',
+                                                            color: isLight ? '#b45309' : '#fcd34d',
+                                                            border: isLight ? '1px solid #fde68a' : '1px solid rgba(245,158,11,0.4)',
+                                                            fontSize: 9.5,
+                                                            fontWeight: 800,
+                                                            cursor: 'pointer',
+                                                            flexShrink: 0
+                                                        }}
                                                     >
                                                         {t.addToOrder}
                                                     </button>
@@ -505,14 +713,26 @@ export default function HotelAIWidget({
                                     </div>
                                 )}
 
-                                {/* SHORT SUGGESTIONS CHIPS */}
+                                {/* SUGGESTED QUESTIONS CHIPS */}
                                 {msg.suggested_questions && msg.suggested_questions.length > 0 && (
-                                    <div className="w-full mt-1.5 flex flex-wrap gap-1">
+                                    <div style={{ width: '100%', marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                         {msg.suggested_questions.map((q, i) => (
                                             <button
                                                 key={i}
+                                                type="button"
                                                 onClick={() => handleSend(q)}
-                                                className="text-[9px] bg-sky-950/80 hover:bg-sky-900 text-sky-200 border border-sky-800/60 px-2 py-0.5 rounded-full transition-all text-left"
+                                                style={{
+                                                    fontSize: 9.5,
+                                                    fontWeight: 600,
+                                                    background: th.chipBg,
+                                                    color: th.chipText,
+                                                    border: `1px solid ${th.chipBorder}`,
+                                                    padding: '3px 8px',
+                                                    borderRadius: 20,
+                                                    cursor: 'pointer',
+                                                    textAlign: 'left',
+                                                    transition: 'all 0.15s ease'
+                                                }}
                                             >
                                                 💬 {q}
                                             </button>
@@ -523,9 +743,9 @@ export default function HotelAIWidget({
                         ))}
 
                         {loading && (
-                            <div className="flex items-center gap-1.5 text-sky-400 text-[10px] py-1 px-1">
-                                <div className="w-3.5 h-3.5 rounded-full bg-sky-900 flex items-center justify-center animate-spin">
-                                    <Sparkles className="w-2 h-2 text-sky-300" />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: isLight ? '#0284c7' : '#38bdf8', fontSize: 10.5, padding: '4px 6px' }}>
+                                <div style={{ width: 14, height: 14, borderRadius: '50%', background: isLight ? '#e0f2fe' : '#0369a1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Sparkles size={9} color={isLight ? '#0284c7' : '#38bdf8'} />
                                 </div>
                                 <span>{t.loading}</span>
                             </div>
@@ -537,7 +757,15 @@ export default function HotelAIWidget({
                     {/* COMPACT INPUT FORM */}
                     <form 
                         onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-                        className="p-2 border-t border-slate-800 bg-slate-900/95 flex items-center gap-1.5 flex-shrink-0"
+                        style={{
+                            padding: '6px 8px',
+                            borderTop: `1px solid ${th.inputFormBorder}`,
+                            background: th.inputFormBg,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            flexShrink: 0
+                        }}
                     >
                         <input 
                             id="hotel-ai-input"
@@ -545,15 +773,35 @@ export default function HotelAIWidget({
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             placeholder={t.placeholder}
-                            className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-all"
+                            style={{
+                                flex: 1,
+                                background: th.inputBg,
+                                border: `1px solid ${th.inputBorder}`,
+                                borderRadius: 8,
+                                padding: '6px 9px',
+                                fontSize: 11,
+                                color: th.inputText,
+                                outline: 'none'
+                            }}
                         />
                         <button
                             id="hotel-ai-submit"
                             type="submit"
                             disabled={!input.trim() || loading}
-                            className="p-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-slate-950 disabled:opacity-40 disabled:cursor-not-allowed font-bold transition-all shadow-sm"
+                            style={{
+                                padding: '6px 10px',
+                                borderRadius: 8,
+                                background: isLight ? '#059669' : '#0284c7',
+                                color: '#ffffff',
+                                border: 'none',
+                                cursor: (!input.trim() || loading) ? 'not-allowed' : 'pointer',
+                                opacity: (!input.trim() || loading) ? 0.45 : 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                            }}
                         >
-                            <Send className="w-3 h-3" />
+                            <Send size={13} />
                         </button>
                     </form>
                 </div>

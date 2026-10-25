@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS password_resets (
 CREATE TABLE IF NOT EXISTS menu_items (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
-  category ENUM('food', 'alcoholic_drink', 'soft_drink') NOT NULL DEFAULT 'food',
+  category VARCHAR(50) NOT NULL DEFAULT 'food',
   sub_category VARCHAR(100) DEFAULT 'General',
   price DECIMAL(10,2) NOT NULL,
   description TEXT,

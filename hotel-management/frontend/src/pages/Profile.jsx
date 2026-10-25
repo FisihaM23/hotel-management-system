@@ -2,6 +2,8 @@ import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { updateMyProfile } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import safeStorage from '../utils/storage'
+import ThemeSelector from '../components/ThemeSelector'
 
 export default function Profile() {
     const { user, loginUser } = useAuth()
@@ -16,7 +18,7 @@ export default function Profile() {
             const payload = { name: form.name, phone: form.phone }
             if (form.password) payload.password = form.password
             await updateMyProfile(payload)
-            loginUser(localStorage.getItem('hms_token'), { ...user, name: form.name, phone: form.phone })
+            loginUser(safeStorage.getItem('hms_token'), { ...user, name: form.name, phone: form.phone })
             toast.success('Profile updated')
             setForm(f => ({ ...f, password: '', confirm: '' }))
         } catch (err) { toast.error(err.response?.data?.error || 'Failed') }
@@ -54,6 +56,18 @@ export default function Profile() {
                         <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>{user?.email}</div>
                     </div>
                 </div>
+            </div>
+
+            <div className="card" style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div>
+                        <h3 style={{ fontSize: 16, fontWeight: 700 }}>Interface Color Theme</h3>
+                        <p style={{ fontSize: 12, color: 'var(--tp-mute, #86a882)', marginTop: 2 }}>
+                            Personalize your dashboard and customer experience colors
+                        </p>
+                    </div>
+                </div>
+                <ThemeSelector variant="pills" />
             </div>
 
             <div className="card">

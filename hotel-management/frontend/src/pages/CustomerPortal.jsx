@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { 
     Plus, BookOpen, FileText, XCircle, Zap, ShieldCheck, 
     UserCheck, CreditCard, CheckCircle2, AlertCircle, 
     Smartphone, Copy, Check, Sparkles, Utensils, ArrowRight,
-    Building2, Trees
+    Building2, Trees, Hotel
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { 
@@ -311,6 +312,14 @@ export default function CustomerPortal() {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <Link
+                        to="/landing"
+                        className="btn btn-outline"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                    >
+                        <Hotel size={16} color="var(--tp-acc, #22c55e)" />
+                        <span>Hotel Showcase & Park</span>
+                    </Link>
                     <button
                         id="btn-ask-hotel-ai"
                         type="button"

@@ -207,7 +207,15 @@ if ($action === 'register') {
     $stmt->bind_param('sssss', $regName, $regEmail, $hash, $role, $phone);
     if ($stmt->execute()) {
         $newId = $conn->insert_id;
-        // Alert admin Mulugeta Fisiha that a new customer registered
+
+        // 1. Welcome In-App Notification directly for the newly registered customer
+        $custTitle = "🎉 Welcome to Grand 6-Floor Hotel & Resort Park!";
+        $custMsg = "Dear {$regName}, your customer account ({$regEmail}) has been successfully registered! You can now explore all 6 floors, reserve luxury rooms, and taste authentic Ethiopian dining feasts (Doro Wat, Special Tibs, Kitfo, starting from 150 ETB). We are delighted to host you!";
+        $custNotif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, 'success')");
+        $custNotif->bind_param('iss', $newId, $custTitle, $custMsg);
+        $custNotif->execute();
+
+        // 2. Alert admin Mulugeta Fisiha that a new customer registered
         $adminStmt = $conn->prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
         $adminStmt->execute();
         $adm = $adminStmt->get_result()->fetch_assoc();
@@ -217,7 +225,28 @@ if ($action === 'register') {
             $notif->bind_param('is', $adm['id'], $adminAlert);
             $notif->execute();
         }
-        json_ok(['message' => 'Account registered successfully. Please login.']);
+
+        // 3. Send Welcome Email via Resend with multi-channel fallback
+        require_once __DIR__ . '/../config/resend.php';
+        $frontendOrigin = !empty($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'http://localhost:5173';
+        $loginUrl = rtrim($frontendOrigin, '/') . '/login';
+        $emailRes = sendCustomerWelcomeEmail($regEmail, $regName, ['loginUrl' => $loginUrl, 'phone' => $phone]);
+
+        $respMsg = 'Account registered successfully! Welcome to Grand 6-Floor Hotel.';
+        if (!empty($emailRes['success'])) {
+            $respMsg = !empty($emailRes['sandbox_mode'])
+                ? 'Account registered successfully! Welcome notification generated and welcome packet dispatched.'
+                : 'Account registered successfully! A welcome email has been sent to your email address.';
+        }
+
+        json_ok([
+            'message' => $respMsg,
+            'email_sent' => !empty($emailRes['success']),
+            'email_id' => $emailRes['id'] ?? null,
+            'email_channel' => $emailRes['channel'] ?? 'none',
+            'sandbox_mode' => !empty($emailRes['sandbox_mode']),
+            'notification_created' => true
+        ]);
     } else {
         json_fail(400, 'Registration failed');
     }
@@ -253,6 +282,21 @@ if ($action === 'request_account') {
     json_ok([
         'status' => 'success',
         'message' => 'Your account request has been submitted to Administrator Mulugeta Fisiha. You will be notified once provisioned.'
+    ]);
+}
+
+// ── 7. TEST RESEND WELCOME EMAIL ────────────────────────────────────────────
+if ($action === 'test_resend') {
+    require_once __DIR__ . '/../config/resend.php';
+    $testEmail = trim($data['email'] ?? ($_GET['email'] ?? 'befather7@gmail.com'));
+    $testName = trim($data['name'] ?? ($_GET['name'] ?? 'Mulugeta Fisiha'));
+    $res = sendCustomerWelcomeEmail($testEmail, $testName);
+    json_ok([
+        'status' => !empty($res['success']) ? 'success' : 'failed',
+        'result' => $res,
+        'api_key_configured' => !empty(getResendApiKey()),
+        'from_email' => getResendFromEmail(),
+        'target_email' => $testEmail
     ]);
 }
 

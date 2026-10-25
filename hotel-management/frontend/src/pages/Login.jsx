@@ -1,19 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Hotel, LogIn, UserPlus, Eye, EyeOff, Shield, Send, CheckCircle2 } from 'lucide-react'
+import { Hotel, LogIn, UserPlus, Eye, EyeOff, Shield, Send, CheckCircle2, ArrowLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../context/AuthContext'
 import { login, requestAccount, register } from '../services/api'
 import { isValidEmail, EMAIL_POLICY_MESSAGE } from '../utils/validation'
-
-const demoAccounts = [
-  { label: 'Admin', email: 'befather7@gmail.com', color: '#ef4444', bg: '#fef2f2', border: '#fecaca', icon: '👑' },
-  { label: 'Manager', email: 'manager@hotel.com', color: '#8b5cf6', bg: '#f5f3ff', border: '#ddd6fe', icon: '🏨' },
-  { label: 'Receptionist', email: 'receptionist@hotel.com', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', icon: '🛎️' },
-  { label: 'Customer', email: 'customer@hotel.com', color: '#10b981', bg: '#f0fdf4', border: '#a7f3d0', icon: '🧳' },
-  { label: 'Housekeeping', email: 'housekeeping@hotel.com', color: '#f59e0b', bg: '#fffbeb', border: '#fde68a', icon: '🧹' },
-  { label: 'Maintenance', email: 'maintenance@hotel.com', color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb', icon: '🔧' },
-]
+import ThemeSelector from '../components/ThemeSelector'
 
 export default function Login() {
   const [tab, setTab] = useState('login') // 'login' | 'signup'
@@ -36,7 +28,7 @@ export default function Login() {
   const [regPhone, setRegPhone] = useState('')
   const [regPass, setRegPass] = useState('')
   const [regConf, setRegConf] = useState('')
-  const [regMode, setRegMode] = useState('request') // 'request' | 'register'
+  const [regMode, setRegMode] = useState('register') // 'register' | 'request'
 
   const { loginUser } = useAuth()
 
@@ -53,7 +45,12 @@ export default function Login() {
       if (!token || !user) throw new Error('Bad server response')
       loginUser(token, user)
       toast.success('Welcome, ' + user.name + '!')
-      setTimeout(() => { window.location.href = '/' }, 600)
+      // When customer logs in, take them automatically to the hotel & park showcase
+      if (user.role === 'customer') {
+        setTimeout(() => { window.location.href = '/' }, 600)
+      } else {
+        setTimeout(() => { window.location.href = '/dashboard' }, 600)
+      }
     } catch (err) {
       setLoading(false)
       const msg = err.response?.data?.error || 'Login failed — check email/password'
@@ -97,7 +94,29 @@ export default function Login() {
     if (regPass !== regConf) return toast.error('Passwords do not match')
     setLoading(true)
     try {
-      await register({ name: regName, email: regEmail, phone: regPhone, password: regPass })
+      const regRes = await register({ name: regName, email: regEmail, phone: regPhone, password: regPass })
+      if (regRes?.data?.email_sent) {
+        if (regRes.data.sandbox_mode) {
+          toast.success('✉️ Welcome email dispatched & notification active!')
+        } else {
+          toast.success('✉️ Welcome email sent to your inbox!')
+        }
+      } else {
+        toast.info('🎉 Welcome notification created in your guest portal!')
+      }
+      // Auto-login newcomer customer directly to the landing page
+      try {
+        const loginRes = await login({ email: regEmail.trim(), password: regPass })
+        const { token, user } = loginRes.data
+        if (token && user) {
+          loginUser(token, user)
+          toast.success(`🎉 Welcome to Grand Hotel, ${user.name}!`)
+          setTimeout(() => { window.location.href = '/' }, 600)
+          return
+        }
+      } catch (loginErr) {
+        console.warn('Auto-login fallback:', loginErr)
+      }
       toast.success('Account created! Sign in now.')
       setEmail(regEmail)
       setPassword('')
@@ -107,39 +126,59 @@ export default function Login() {
     } finally { setLoading(false) }
   }
 
-  const fillDemo = (demoEmail) => {
-    setEmail(demoEmail)
-    setPassword('password123')
-  }
-
   const tabBtn = (active) => ({
     flex: 1, padding: '9px 0', border: 'none', borderRadius: 8,
-    cursor: 'pointer', fontSize: 13.5, fontWeight: 600,
+    cursor: 'pointer', fontSize: 13.5, fontWeight: 700,
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-    background: active ? '#fff' : 'transparent',
-    color: active ? '#1d4ed8' : '#6b7280',
-    boxShadow: active ? '0 1px 4px rgba(0,0,0,0.1)' : 'none'
+    background: active ? 'var(--tp-acc)' : 'transparent',
+    color: active ? 'var(--tp-acc-ink, #ffffff)' : 'var(--tp-mute)',
+    boxShadow: active ? '0 2px 8px color-mix(in oklab, var(--tp-acc) 30%, transparent)' : 'none',
+    transition: 'all 0.2s ease'
   })
 
   return (
     <div className="login-page">
-      <div className="login-card" style={{ maxWidth: 460 }}>
+      {/* Top Utility Bar */}
+      <div style={{ position: 'absolute', top: 16, left: 20, right: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 20 }}>
+        <Link
+          to="/landing"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--tp-mute, #94a3b8)',
+            background: 'var(--tp-surf, rgba(0,0,0,0.4))',
+            padding: '6px 14px',
+            borderRadius: 20,
+            border: '1px solid var(--tp-line, rgba(255,255,255,0.1))',
+            backdropFilter: 'blur(8px)'
+          }}
+        >
+          <ArrowLeft size={15} />
+          <span>Explore Hotel & Resort Park</span>
+        </Link>
+        <ThemeSelector variant="dropdown" align="right" />
+      </div>
+
+      <div className="login-card" style={{ maxWidth: 460, boxShadow: 'none' }}>
 
         <div className="login-logo">
           <div style={{ width: 64, height: 64, background: 'linear-gradient(135deg,#1e40af,#3b82f6)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
             <Hotel size={34} color="#fff" />
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111' }}>Hotel Management</h1>
-          <p style={{ color: '#6b7280', fontSize: 14 }}>Secure Enterprise Hotel Administration</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--tp-ink)' }}>Hotel Management</h1>
+          <p style={{ color: 'var(--tp-mute)', fontSize: 13 }}>Secure Enterprise Hotel Administration</p>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 10, padding: 4, marginBottom: 20 }}>
+        {/* Tabs: Only Login and Create Account */}
+        <div style={{ display: 'flex', background: 'var(--tp-surf-2)', border: '1px solid var(--tp-line)', borderRadius: 10, padding: 4, marginBottom: 20 }}>
           <button type="button" onClick={() => setTab('login')} style={tabBtn(tab === 'login')}>
             <LogIn size={15} /> Sign In
           </button>
-          <button type="button" onClick={() => setTab('signup')} style={tabBtn(tab === 'signup')}>
-            <Shield size={15} /> Account Provisioning
+          <button type="button" onClick={() => { setTab('signup'); setRegMode('register') }} style={tabBtn(tab === 'signup')}>
+            <UserPlus size={15} /> Create Account
           </button>
         </div>
 
@@ -188,103 +227,22 @@ export default function Login() {
             <button
               type="submit"
               className="btn btn-primary"
-              style={{ width: '100%', justifyContent: 'center', padding: 11, fontSize: 15, marginTop: 4 }}
+              style={{ width: '100%', justifyContent: 'center', padding: 12, fontSize: 15, marginTop: 4, fontWeight: 700 }}
               disabled={loading}
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
 
-            <p style={{ textAlign: 'center', marginTop: 14, fontSize: 13, color: '#6b7280' }}>
-              Need an account?{' '}
+            <p style={{ textAlign: 'center', marginTop: 18, fontSize: 13.5, color: 'var(--tp-mute)' }}>
+              Don't have an account?{' '}
               <button
                 type="button"
-                onClick={() => setTab('signup')}
-                style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+                onClick={() => { setTab('signup'); setRegMode('register') }}
+                style={{ background: 'none', border: 'none', color: 'var(--tp-acc)', cursor: 'pointer', fontWeight: 700, fontSize: 13.5 }}
               >
-                Admin Provisioning Notice
+                Create Account
               </button>
             </p>
-
-            <div style={{ marginTop: 20, borderTop: '1px solid #f3f4f6', paddingTop: 16 }}>
-              <p style={{ fontSize: 11, color: '#9ca3af', marginBottom: 10, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Quick demo login
-              </p>
-              <style>{`
-                .demo-btn {
-                  flex: 1 1 0;
-                  min-width: 0;
-                  padding: 10px 4px 8px;
-                  border-radius: 12px;
-                  cursor: pointer;
-                  font-size: 11px;
-                  text-align: center;
-                  display: flex;
-                  flex-direction: column;
-                  align-items: center;
-                  gap: 4px;
-                  transition: transform 0.18s cubic-bezier(.4,0,.2,1),
-                              box-shadow 0.18s cubic-bezier(.4,0,.2,1),
-                              background 0.18s,
-                              border-color 0.18s,
-                              color 0.18s;
-                  outline: none;
-                }
-                .demo-btn:hover {
-                  transform: translateY(-4px) scale(1.08) !important;
-                  box-shadow: 0 8px 20px var(--demo-color, #3b82f6)44 !important;
-                }
-                .demo-btn:active {
-                  transform: translateY(-1px) scale(1.03) !important;
-                }
-                .demo-btn .demo-icon {
-                  font-size: 18px;
-                  line-height: 1;
-                  transition: transform 0.18s;
-                }
-                .demo-btn:hover .demo-icon {
-                  transform: scale(1.2) rotate(-5deg);
-                }
-                @media (max-width: 540px) {
-                  .demo-accounts-bar {
-                    grid-template-columns: repeat(3, 1fr) !important;
-                    gap: 8px !important;
-                  }
-                }
-                @media (max-width: 360px) {
-                  .demo-accounts-bar {
-                    grid-template-columns: repeat(2, 1fr) !important;
-                  }
-                }
-              `}</style>
-              <div className="demo-accounts-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
-                {demoAccounts.map(a => {
-                  const isActive = email === a.email
-                  return (
-                    <button
-                      key={a.email}
-                      type="button"
-                      className="demo-btn"
-                      onClick={() => fillDemo(a.email)}
-                      style={{
-                        '--demo-color': a.color,
-                        border: `2px solid ${isActive ? a.color : a.border}`,
-                        background: isActive ? a.bg : '#fff',
-                        color: isActive ? a.color : '#6b7280',
-                        fontWeight: isActive ? 700 : 500,
-                        transform: isActive ? 'translateY(-3px) scale(1.06)' : 'translateY(0) scale(1)',
-                        boxShadow: isActive ? `0 6px 16px ${a.color}33` : '0 1px 3px rgba(0,0,0,0.06)',
-                      }}
-                    >
-                      <span className="demo-icon">{a.icon}</span>
-                      <span>{a.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              <p style={{ textAlign: 'center', fontSize: 12, color: '#6b7280', marginTop: 10 }}>
-                Demo passwords: <strong>password123</strong> (or <strong>Password123!</strong>)
-              </p>
-            </div>
           </form>
         )}
 
@@ -292,16 +250,16 @@ export default function Login() {
         {tab === 'signup' && (
           <div>
             <div style={{
-              background: '#eff6ff',
-              border: '1px solid #bfdbfe',
+              background: 'var(--tp-surf-2)',
+              border: '1px solid var(--tp-line)',
               borderRadius: 10,
               padding: '12px 14px',
               marginBottom: 16,
               fontSize: 12.5,
-              color: '#1e40af',
+              color: 'var(--tp-ink)',
               lineHeight: 1.5
             }}>
-              <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: 'var(--tp-acc)' }}>
                 <Shield size={16} /> Admin Account Creation Policy
               </div>
               All user accounts and credentials are created and managed by System Administrator <strong>Mulugeta Fisiha</strong> (<code>befather7@gmail.com</code>).
@@ -313,7 +271,7 @@ export default function Login() {
                 type="button"
                 onClick={() => setRegMode('request')}
                 className={`btn btn-sm ${regMode === 'request' ? 'btn-primary' : 'btn-outline'}`}
-                style={{ flex: 1, fontSize: 12 }}
+                style={{ flex: 1, fontSize: 12, fontWeight: 700 }}
               >
                 Request Account from Admin
               </button>
@@ -321,7 +279,7 @@ export default function Login() {
                 type="button"
                 onClick={() => setRegMode('register')}
                 className={`btn btn-sm ${regMode === 'register' ? 'btn-primary' : 'btn-outline'}`}
-                style={{ flex: 1, fontSize: 12 }}
+                style={{ flex: 1, fontSize: 12, fontWeight: 700 }}
               >
                 Guest Self-Register
               </button>
@@ -331,8 +289,8 @@ export default function Login() {
               requestSent ? (
                 <div style={{ textAlign: 'center', padding: '16px 0' }}>
                   <CheckCircle2 size={44} color="#16a34a" style={{ margin: '0 auto 10px' }} />
-                  <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Request Submitted</h3>
-                  <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 14 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--tp-ink)', marginBottom: 6 }}>Request Submitted</h3>
+                  <p style={{ fontSize: 13, color: 'var(--tp-mute)', marginBottom: 14 }}>
                     Your request was sent to Administrator <strong>Mulugeta Fisiha</strong>. You will receive account access details upon verification.
                   </p>
                   <button
@@ -426,7 +384,7 @@ export default function Login() {
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Email Address * <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(Must be @gmail.com or @icloud.com)</span></label>
+                  <label className="form-label">Email Address * <span style={{ fontSize: 11, color: 'var(--tp-acc)', fontWeight: 600 }}>(Must be @gmail.com or @icloud.com)</span></label>
                   <input
                     className="form-control"
                     type="email"
@@ -471,8 +429,8 @@ export default function Login() {
                 </div>
                 <button
                   type="submit"
-                  className="btn btn-success"
-                  style={{ width: '100%', justifyContent: 'center', padding: 11, fontSize: 14 }}
+                  className="btn btn-primary"
+                  style={{ width: '100%', justifyContent: 'center', padding: 11, fontSize: 14, fontWeight: 700 }}
                   disabled={loading}
                 >
                   {loading ? 'Creating Account...' : 'Register Customer Account'}
@@ -481,14 +439,14 @@ export default function Login() {
             )}
 
             {/* Administrator Direct Information */}
-            <div style={{ marginTop: 18, borderTop: '1px solid #f3f4f6', paddingTop: 14, textAlign: 'center', fontSize: 12, color: '#6b7280' }}>
+            <div style={{ marginTop: 18, borderTop: '1px solid var(--tp-line)', paddingTop: 14, textAlign: 'center', fontSize: 12, color: 'var(--tp-mute)' }}>
               <div>System Administrator: <strong>Mulugeta Fisiha</strong></div>
               <div>Direct Email: <code>befather7@gmail.com</code> | Phone: <code>555-0001</code></div>
               <div style={{ marginTop: 8 }}>
                 <button
                   type="button"
                   onClick={() => setTab('login')}
-                  style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', fontWeight: 600, fontSize: 13 }}
+                  style={{ background: 'none', border: 'none', color: 'var(--tp-acc)', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
                 >
                   ← Back to Sign In
                 </button>

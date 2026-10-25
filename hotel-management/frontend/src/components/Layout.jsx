@@ -3,14 +3,16 @@ import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import AdminMobileBankingAlert from './AdminMobileBankingAlert'
 import HotelAIWidget from './HotelAIWidget'
+import ThemeSelector from './ThemeSelector'
+import safeStorage from '../utils/storage'
 import { testConnection, getNotifications, markNotificationRead, getDues, createPayment, PAYMENT_METHODS } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import { Bell, Menu, CircleDollarSign, CheckCircle2, ChevronRight, RefreshCw, ShieldAlert, Sparkles } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const titles = {
-    '/': 'Dashboard', '/rooms': 'Rooms', '/guests': 'Guests',
-    '/bookings': 'Bookings', '/payments': 'Payments',
+    '/': 'Hotel & Park Showcase', '/dashboard': 'Operations Dashboard', '/landing': 'Hotel & Park Showcase', '/hotel-park': 'Hotel & Park Showcase',
+    '/rooms': 'Rooms', '/guests': 'Guests', '/bookings': 'Bookings', '/payments': 'Payments',
     '/housekeeping': 'Housekeeping', '/maintenance': 'Maintenance',
     '/users': 'User Management', '/reports': 'Reports', '/invoices': 'Invoices',
     '/dining': 'Dining & Bar', '/my-bookings': 'My Bookings', '/profile': 'Profile'
@@ -29,14 +31,20 @@ export default function Layout() {
 
     // Hotel AI Right-Side State (Minimized by default to keep dashboard clean & uncovered)
     const [aiPanelOpen, setAiPanelOpen] = useState(() => {
-        const saved = localStorage.getItem('hotel_ai_dock_open')
-        return saved === 'true' // false by default
+        try {
+            const saved = safeStorage.getItem('hotel_ai_dock_open')
+            return saved === 'true' // false by default
+        } catch {
+            return false
+        }
     })
 
     const toggleAiPanel = (forcedVal) => {
         setAiPanelOpen(prev => {
             const next = typeof forcedVal === 'boolean' ? forcedVal : !prev
-            localStorage.setItem('hotel_ai_dock_open', String(next))
+            try {
+                safeStorage.setItem('hotel_ai_dock_open', String(next))
+            } catch {}
             return next
         })
     }
@@ -449,6 +457,9 @@ export default function Layout() {
                                 EN | አማ
                             </span>
                         </button>
+                        
+                        {/* THEME SELECTOR BUTTON */}
+                        <ThemeSelector variant="dropdown" align="right" />
 
                         <div className="dropdown" ref={notifRef}>
                             <button
@@ -499,10 +510,12 @@ export default function Layout() {
                 </div>
 
                 {/* Hotel AI Assistant Placed on the Right Side of All Dashboard Parts in Small Compact Size */}
-                <HotelAIWidget 
-                    isOpen={aiPanelOpen}
-                    onToggle={toggleAiPanel}
-                />
+                {location.pathname !== '/landing' && (
+                    <HotelAIWidget 
+                        isOpen={aiPanelOpen}
+                        onToggle={toggleAiPanel}
+                    />
+                )}
             </div>
         </div>
     )

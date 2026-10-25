@@ -74,9 +74,40 @@ function sendSMS($toPhone, $message) {
     return false;
 }
 
-// 2. Direct SMTP Email Dispatch (Push to Phone)
+// 2. Direct Email Dispatch (Resend API + Direct SMTP + mail fallback)
 function sendEmailAlert($toEmail, $toName, $subject, $body) {
     if (empty($toEmail) || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) return false;
+
+    // A. First try Resend Transactional Email Engine
+    require_once __DIR__ . '/resend.php';
+    if (!empty(getResendApiKey())) {
+        $htmlBody = <<<HTML
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>{$subject}</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#050805;color:#e2e8f0;padding:24px;margin:0;">
+  <div style="max-width:560px;margin:0 auto;background:#0c130c;border:1px solid #1e3820;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+    <div style="background:linear-gradient(135deg,#059669,#047857);padding:20px 24px;text-align:center;color:#ffffff;">
+      <h2 style="margin:0;font-size:20px;font-weight:800;">Grand 6-Floor Hotel & Resort Park</h2>
+      <p style="margin:4px 0 0;font-size:12px;opacity:0.9;">Booking Confirmation & Payment Notification</p>
+    </div>
+    <div style="padding:24px;">
+      <h3 style="color:#22c55e;font-size:16px;margin-top:0;">{$subject}</h3>
+      <div style="background:#142014;border:1px solid #1e3820;border-radius:8px;padding:16px;white-space:pre-wrap;font-family:monospace;font-size:13px;line-height:1.6;color:#cbd5e1;">{$body}</div>
+      <p style="margin-top:24px;font-size:12px;color:#64748b;text-align:center;border-top:1px solid #1e3820;padding-top:14px;">
+        Grand 6-Floor Hotel & Resort Park • Addis Ababa, Ethiopia<br>
+        Direct Phone Support: <strong>0932338138</strong> • Inquiries: <strong>befather7@gmail.com</strong>
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+HTML;
+        $resResult = sendResendEmail($toEmail, $subject, $htmlBody, $body);
+        if (!empty($resResult['success'])) {
+            return true;
+        }
+    }
 
     $smtpUser = defined('SMTP_USER') ? SMTP_USER : getenv('SMTP_USER');
     $smtpPass = defined('SMTP_PASS') ? SMTP_PASS : getenv('SMTP_PASS');

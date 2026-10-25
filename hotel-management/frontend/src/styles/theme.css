@@ -78,11 +78,11 @@
 
   --tp-ink:#e7ffe4;
   --tp-mute:#86a882;
-  --tp-acc:oklch(0.86 0.24 calc(var(--tp-h) + 0));
-  --tp-acc-2:oklch(0.72 0.24 calc(var(--tp-h) + 160));
+  --tp-acc:#22c55e;
+  --tp-acc-2:#10b981;
   --tp-acc-ink:#050805;
-  --tp-line:oklch(0.46 0.16 calc(var(--tp-h) + 0));
-  --tp-grad:linear-gradient(135deg, oklch(0.86 0.24 calc(var(--tp-h) + 0)), oklch(0.72 0.24 calc(var(--tp-h) + 160)));
+  --tp-line:#1e3820;
+  --tp-grad:linear-gradient(135deg, #22c55e, #10b981);
 
   --tp-r:12px;--tp-r-sm:8px;--tp-r-lg:18px;--tp-r-btn:99px;
   --tp-sh:0 0 30px oklch(0.86 0.24 calc(var(--tp-h) + 0)), 0 14px 30px rgba(0,0,0,.5);
@@ -99,14 +99,14 @@
 
   /* Semantic states, derived from the brand hue so a re-brand stays coherent.
      Used for status (ok / warn / bad) — never as decoration. */
-  --tp-ok:oklch(0.86 0.24 calc(var(--tp-h) + 0));
-  --tp-ok-dim:oklch(0.46 0.16 calc(var(--tp-h) + 0));
-  --tp-warn:oklch(0.84 0.19 calc(var(--tp-h) + 55));
-  --tp-warn-dim:oklch(0.44 0.14 calc(var(--tp-h) + 55));
-  --tp-bad:oklch(0.70 0.24 calc(var(--tp-h) + 205));
-  --tp-bad-dim:oklch(0.42 0.16 calc(var(--tp-h) + 205));
-  --tp-alt:oklch(0.72 0.24 calc(var(--tp-h) + 160));
-  --tp-alt-dim:oklch(0.44 0.15 calc(var(--tp-h) + 160));
+  --tp-ok:#22c55e;
+  --tp-ok-dim:#14532d;
+  --tp-warn:#f59e0b;
+  --tp-warn-dim:#78350f;
+  --tp-bad:#ef4444;
+  --tp-bad-dim:#7f1d1d;
+  --tp-alt:#38bdf8;
+  --tp-alt-dim:#0c4a6e;
 
   color-scheme: dark;
 }
@@ -119,18 +119,30 @@
 
 html {
   background: var(--tp-bg);
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--tp-canvas);
   color: var(--tp-ink);
   font-family: var(--tp-font-body);
   font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Faint datamosh grain. Static, no animation — the theme stays quiet at rest. */

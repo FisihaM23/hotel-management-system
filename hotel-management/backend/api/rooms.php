@@ -3,7 +3,15 @@ require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth_middleware.php';
 
-$user = authenticate();
+$user = null;
+$auth = getAuthorizationHeader();
+if ($auth && str_starts_with($auth, 'Bearer ')) {
+    try {
+        $user = authenticate();
+    } catch (\Throwable $e) {
+        $user = null;
+    }
+}
 $conn = getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
@@ -12,7 +20,7 @@ $frontDesk = ['admin', 'manager', 'receptionist'];
 switch ($method) {
     case 'GET':
         $status = $_GET['status'] ?? null;
-        if ($user['role'] === 'customer') {
+        if (!$user || $user['role'] === 'customer') {
             $status = 'available';
         }
         if ($id) {
@@ -20,7 +28,7 @@ switch ($method) {
             $stmt->bind_param('i', $id);
             $stmt->execute();
             $room = $stmt->get_result()->fetch_assoc();
-            if ($user['role'] === 'customer' && $room && $room['status'] !== 'available') {
+            if ((!$user || $user['role'] === 'customer') && $room && $room['status'] !== 'available') {
                 json_fail(403, 'Access denied');
             }
             json_ok($room);
@@ -30,7 +38,11 @@ switch ($method) {
             $stmt->execute();
             json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
         } else {
-            json_ok($conn->query("SELECT * FROM rooms ORDER BY room_number")->fetch_all(MYSQLI_ASSOC));
+            if ($user && in_array($user['role'], $frontDesk, true)) {
+                json_ok($conn->query("SELECT * FROM rooms ORDER BY room_number")->fetch_all(MYSQLI_ASSOC));
+            } else {
+                json_ok($conn->query("SELECT * FROM rooms WHERE status='available' ORDER BY room_number")->fetch_all(MYSQLI_ASSOC));
+            }
         }
         break;
 
