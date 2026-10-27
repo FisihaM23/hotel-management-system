@@ -630,7 +630,11 @@ switch ($action) {
         break;
 
     case 'building_floors':
-        $roomsRes = $conn->query("SELECT id, room_number, type, floor, price_per_night, status, description, amenities, max_guests FROM rooms ORDER BY floor ASC, room_number ASC");
+        $roomsRes = $conn->query("SELECT r.*,
+            CASE WHEN r.status = 'occupied' THEN 1
+                 WHEN EXISTS (SELECT 1 FROM bookings b WHERE b.room_id = r.id AND b.status IN ('confirmed','checked_in') AND b.check_in <= CURDATE() AND b.check_out >= CURDATE()) THEN 1
+                 ELSE 0 END AS is_booked
+            FROM rooms r ORDER BY r.floor ASC, r.room_number ASC");
         $allRooms = $roomsRes ? $roomsRes->fetch_all(MYSQLI_ASSOC) : [];
         $roomsByFloor = [];
         foreach ($allRooms as $r) {

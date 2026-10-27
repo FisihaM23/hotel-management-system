@@ -19,30 +19,44 @@ $frontDesk = ['admin', 'manager', 'receptionist'];
 
 switch ($method) {
     case 'GET':
+        // Auto-heal: Ensure rooms marked 'occupied' return to 'available' if all bookings were deleted or completed
+        $conn->query("UPDATE rooms r 
+            SET r.status = 'available' 
+            WHERE r.status = 'occupied' 
+            AND NOT EXISTS (
+                SELECT 1 FROM bookings b 
+                WHERE b.room_id = r.id 
+                AND b.status IN ('checked_in', 'confirmed') 
+                AND b.check_out >= CURDATE()
+            )");
+
         $status = $_GET['status'] ?? null;
-        if (!$user || $user['role'] === 'customer') {
-            $status = 'available';
-        }
         if ($id) {
-            $stmt = $conn->prepare("SELECT * FROM rooms WHERE id=?");
+            $stmt = $conn->prepare("SELECT r.*,
+                CASE WHEN r.status = 'occupied' THEN 1
+                     WHEN EXISTS (SELECT 1 FROM bookings b WHERE b.room_id = r.id AND b.status IN ('confirmed','checked_in') AND b.check_in <= CURDATE() AND b.check_out >= CURDATE()) THEN 1
+                     ELSE 0 END AS is_booked
+                FROM rooms r WHERE r.id=?");
             $stmt->bind_param('i', $id);
             $stmt->execute();
             $room = $stmt->get_result()->fetch_assoc();
-            if ((!$user || $user['role'] === 'customer') && $room && $room['status'] !== 'available') {
-                json_fail(403, 'Access denied');
-            }
             json_ok($room);
-        } elseif ($status) {
-            $stmt = $conn->prepare("SELECT * FROM rooms WHERE status=? ORDER BY room_number");
+        } elseif (!empty($status)) {
+            $stmt = $conn->prepare("SELECT r.*,
+                CASE WHEN r.status = 'occupied' THEN 1
+                     WHEN EXISTS (SELECT 1 FROM bookings b WHERE b.room_id = r.id AND b.status IN ('confirmed','checked_in') AND b.check_in <= CURDATE() AND b.check_out >= CURDATE()) THEN 1
+                     ELSE 0 END AS is_booked
+                FROM rooms r WHERE r.status=? ORDER BY r.room_number");
             $stmt->bind_param('s', $status);
             $stmt->execute();
             json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
         } else {
-            if ($user && in_array($user['role'], $frontDesk, true)) {
-                json_ok($conn->query("SELECT * FROM rooms ORDER BY room_number")->fetch_all(MYSQLI_ASSOC));
-            } else {
-                json_ok($conn->query("SELECT * FROM rooms WHERE status='available' ORDER BY room_number")->fetch_all(MYSQLI_ASSOC));
-            }
+            $sql = "SELECT r.*,
+                CASE WHEN r.status = 'occupied' THEN 1
+                     WHEN EXISTS (SELECT 1 FROM bookings b WHERE b.room_id = r.id AND b.status IN ('confirmed','checked_in') AND b.check_in <= CURDATE() AND b.check_out >= CURDATE()) THEN 1
+                     ELSE 0 END AS is_booked
+                FROM rooms r ORDER BY r.room_number";
+            json_ok($conn->query($sql)->fetch_all(MYSQLI_ASSOC));
         }
         break;
 

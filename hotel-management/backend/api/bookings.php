@@ -181,7 +181,7 @@ switch ($method) {
             json_fail(400, 'Valid room, check-in and check-out dates are required');
         }
 
-        $stmt = $conn->prepare("SELECT room_number, price_per_night, status FROM rooms WHERE id=?");
+        $stmt = $conn->prepare("SELECT room_number, price_per_night, status, max_guests FROM rooms WHERE id=?");
         $stmt->bind_param('i', $room_id);
         $stmt->execute();
         $room = $stmt->get_result()->fetch_assoc();
@@ -191,8 +191,19 @@ switch ($method) {
         if ($room['status'] === 'maintenance') {
             json_fail(400, 'Selected room is under maintenance');
         }
+        if ($room['status'] === 'occupied') {
+            json_fail(400, 'Selected room is already booked');
+        }
         if (roomHasOverlap($conn, $room_id, $check_in, $check_out)) {
             json_fail(409, 'Room is already booked for those dates. Please select an available room.');
+        }
+
+        $adults = (int) ($d['adults'] ?? 1);
+        $children = (int) ($d['children'] ?? 0);
+        $totalGuests = max(1, $adults + $children);
+        $maxCapacity = (int) ($room['max_guests'] ?? 2);
+        if ($totalGuests > $maxCapacity) {
+            json_fail(400, "The number of guests ($totalGuests) exceeds Room {$room['room_number']}'s maximum capacity of $maxCapacity guests.");
         }
 
         $nights = max(1, (strtotime($check_out) - strtotime($check_in)) / 86400);
@@ -507,7 +518,7 @@ switch ($method) {
             if (strtotime($check_out) <= strtotime($check_in)) {
                 json_fail(400, 'Check-out must be after check-in');
             }
-            $stmt2 = $conn->prepare("SELECT price_per_night, status FROM rooms WHERE id=?");
+            $stmt2 = $conn->prepare("SELECT price_per_night, status, max_guests, room_number FROM rooms WHERE id=?");
             $stmt2->bind_param('i', $new_room_id);
             $stmt2->execute();
             $roomData = $stmt2->get_result()->fetch_assoc();
@@ -517,11 +528,16 @@ switch ($method) {
             if (roomHasOverlap($conn, $new_room_id, $check_in, $check_out, $id)) {
                 json_fail(409, 'Room is already booked for those dates');
             }
+            $adults = (int) ($d['adults'] ?? $existing['adults']);
+            $children = (int) ($d['children'] ?? $existing['children']);
+            $totalGuests = max(1, $adults + $children);
+            $maxCapacity = (int) ($roomData['max_guests'] ?? 2);
+            if ($totalGuests > $maxCapacity) {
+                json_fail(400, "The number of guests ($totalGuests) exceeds Room {$roomData['room_number']}'s maximum capacity of $maxCapacity guests.");
+            }
             $nights = max(1, (strtotime($check_out) - strtotime($check_in)) / 86400);
             $total = $roomData['price_per_night'] * $nights;
             $special = $d['special_requests'] ?? $existing['special_requests'];
-            $adults = (int) ($d['adults'] ?? $existing['adults']);
-            $children = (int) ($d['children'] ?? $existing['children']);
             $status = $d['status'] ?? $existing['status'];
             $stmt = $conn->prepare("UPDATE bookings SET customer_id=?,room_id=?,check_in=?,check_out=?,adults=?,children=?,special_requests=?,total_amount=?,status=? WHERE id=?");
             $stmt->bind_param('iissiisdsi', $customer_id, $new_room_id, $check_in, $check_out, $adults, $children, $special, $total, $status, $id);
@@ -541,21 +557,50 @@ switch ($method) {
         break;
 
     case 'DELETE':
-        authenticate(['admin', 'manager']);
+        authenticate(['admin', 'manager', 'receptionist']);
         if (!$id) {
             json_fail(400, 'Booking ID is required');
         }
         $existing = fetchBooking($conn, $id);
-        $stmt = $conn->prepare("DELETE FROM bookings WHERE id=?");
-        $stmt->bind_param('i', $id);
-        executeOrFail($stmt, $conn);
-        if ($stmt->affected_rows < 1) {
-            json_fail(400, 'Booking could not be deleted');
+        if (!$existing) {
+            json_fail(404, 'Booking not found');
         }
-        if ($existing) {
-            syncRoomStatus($conn, (int) $existing['room_id']);
+        $roomId = (int) $existing['room_id'];
+
+        $conn->query("SET FOREIGN_KEY_CHECKS = 0");
+        try {
+            // Delete dependent payments and invoices
+            $delP = $conn->prepare("DELETE FROM payments WHERE booking_id = ?");
+            $delP->bind_param('i', $id);
+            $delP->execute();
+
+            $delI = $conn->prepare("DELETE FROM invoices WHERE booking_id = ?");
+            $delI->bind_param('i', $id);
+            $delI->execute();
+
+            $stmt = $conn->prepare("DELETE FROM bookings WHERE id = ?");
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+
+            $customerId = (int) ($existing['customer_id'] ?? 0);
+            if (!empty($_GET['delete_customer']) && $customerId) {
+                $delCust = $conn->prepare("DELETE FROM users WHERE id = ? AND role = 'customer'");
+                $delCust->bind_param('i', $customerId);
+                $delCust->execute();
+            }
+
+            $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+
+            // Sync room status to free the room if no other active booking exists
+            if ($roomId) {
+                syncRoomStatus($conn, $roomId);
+            }
+
+            json_ok(['message' => 'Booking deleted successfully and room freed to available']);
+        } catch (\Throwable $e) {
+            $conn->query("SET FOREIGN_KEY_CHECKS = 1");
+            json_fail(500, 'Failed to delete booking: ' . $e->getMessage());
         }
-        json_ok(['message' => 'Booking deleted']);
         break;
 
     default:

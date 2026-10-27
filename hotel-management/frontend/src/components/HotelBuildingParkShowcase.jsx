@@ -445,24 +445,41 @@ export default function HotelBuildingParkShowcase({ onSelectRoom, onOpenAI }) {
                                                     <span style={{ fontWeight: 800, color: 'var(--tp-ink)', fontSize: 14 }}>
                                                         {lang === 'am' ? `ክፍል #${room.room_number}` : `Room #${room.room_number}`}
                                                     </span>
-                                                    <span style={{
-                                                        fontSize: 10,
-                                                        fontWeight: 800,
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '0.08em',
-                                                        padding: '2px 8px',
-                                                        borderRadius: 4,
-                                                        background: 'var(--tp-surf-2)',
-                                                        color: 'var(--tp-acc)',
-                                                        border: '1px solid var(--tp-line)'
-                                                    }}>
-                                                        {room.type}
-                                                    </span>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <span style={{
+                                                            fontSize: 10,
+                                                            fontWeight: 800,
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: '0.04em',
+                                                            padding: '2px 8px',
+                                                            borderRadius: 4,
+                                                            background: (room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked') ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                                                            color: (room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked') ? '#ef4444' : '#22c55e',
+                                                            border: `1px solid ${(room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked') ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`
+                                                        }}>
+                                                            {(room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked')
+                                                                ? (lang === 'am' ? 'የተያዘ (Occupied)' : 'Occupied')
+                                                                : (lang === 'am' ? 'ክፍት (Available)' : 'Available')}
+                                                        </span>
+                                                        <span style={{
+                                                            fontSize: 10,
+                                                            fontWeight: 800,
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: '0.08em',
+                                                            padding: '2px 8px',
+                                                            borderRadius: 4,
+                                                            background: 'var(--tp-surf-2)',
+                                                            color: 'var(--tp-acc)',
+                                                            border: '1px solid var(--tp-line)'
+                                                        }}>
+                                                            {room.type}
+                                                        </span>
+                                                    </div>
                                                 </div>
 
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 8 }}>
                                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--tp-mute)', fontWeight: 600 }}>
-                                                        <Users size={13} /> max {room.max_guests}
+                                                        <Users size={13} /> max {room.max_guests} guests
                                                     </span>
                                                     <span style={{ color: 'var(--tp-line)' }}>•</span>
                                                     <span style={{ color: 'var(--tp-acc)', fontWeight: 800 }}>
@@ -504,15 +521,29 @@ export default function HotelBuildingParkShowcase({ onSelectRoom, onOpenAI }) {
                                                 )}
                                             </div>
 
-                                            <button
-                                                type="button"
-                                                onClick={() => handleRoomBook(room)}
-                                                className="btn btn-primary btn-sm"
-                                                style={{ width: '100%', justifyContent: 'center', padding: '8px 12px' }}
-                                            >
-                                                {lang === 'am' ? `ክፍል #${room.room_number}ን ያሲዙ` : `Reserve Room #${room.room_number}`}
-                                                <ArrowRight size={14} style={{ marginLeft: 6 }} />
-                                            </button>
+                                            {(() => {
+                                                const isBooked = room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked';
+                                                return isBooked ? (
+                                                    <button
+                                                        type="button"
+                                                        disabled
+                                                        className="btn btn-outline btn-sm"
+                                                        style={{ width: '100%', justifyContent: 'center', padding: '8px 12px', opacity: 0.6, cursor: 'not-allowed' }}
+                                                    >
+                                                        {lang === 'am' ? 'የተያዘ (Occupied)' : 'Occupied'}
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRoomBook(room)}
+                                                        className="btn btn-primary btn-sm"
+                                                        style={{ width: '100%', justifyContent: 'center', padding: '8px 12px' }}
+                                                    >
+                                                        {lang === 'am' ? 'ክፍት (Available)' : 'Available'}
+                                                        <ArrowRight size={14} style={{ marginLeft: 6 }} />
+                                                    </button>
+                                                );
+                                            })()}
                                         </div>
                                     ))}
                                 </div>

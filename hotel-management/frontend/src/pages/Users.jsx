@@ -155,10 +155,10 @@ export default function Users() {
         if (u.email === 'befather7@gmail.com') {
             return toast.error('Primary Administrator account cannot be deleted')
         }
-        if (!confirm(`Are you sure you want to delete user ${u.name} (${u.email})?`)) return
+        if (!confirm(`Are you sure you want to delete user ${u.name} (${u.email})?\nAll associated records and assignments will be cleanly resolved without error.`)) return
         try {
             await deleteUser(u.id)
-            toast.success('User deleted')
+            toast.success('User deleted successfully')
             load()
         } catch (err) {
             toast.error(err.response?.data?.error || 'Failed to delete user')

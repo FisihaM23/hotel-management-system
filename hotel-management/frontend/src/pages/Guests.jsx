@@ -89,11 +89,11 @@ export default function Guests() {
         }
     }
 
-    const handleDelete = async (id) => {
-        if (!confirm('Delete this guest? This cannot be undone.')) return
+    const handleDelete = async (g) => {
+        if (!confirm(`Are you sure you want to delete guest "${g.name || 'this guest'}" (${g.email})?\nThis will remove the guest and cleanly resolve any associated bookings, freeing up their rooms.`)) return
         try {
-            await deleteGuest(id)
-            toast.success('Guest deleted')
+            await deleteGuest(g.id)
+            toast.success('Guest deleted successfully')
             load(search)
         } catch (err) {
             toast.error(err.response?.data?.error || 'Failed to delete guest')
@@ -182,20 +182,24 @@ export default function Guests() {
                                             {new Date(g.created_at).toLocaleDateString()}
                                         </td>
                                         <td>
-                                            <div style={{ display: 'flex', gap: 6 }}>
+                                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                 <button
-                                                    className="btn btn-outline btn-sm btn-icon"
+                                                    className="btn btn-outline btn-sm"
                                                     onClick={() => openEdit(g)}
                                                     title="Edit Guest"
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 9px', fontSize: 12, fontWeight: 600 }}
                                                 >
                                                     <Pencil size={13} />
+                                                    Edit
                                                 </button>
                                                 <button
-                                                    className="btn btn-danger btn-sm btn-icon"
-                                                    onClick={() => handleDelete(g.id)}
-                                                    title="Delete Guest"
+                                                    className="btn btn-danger btn-sm"
+                                                    onClick={() => handleDelete(g)}
+                                                    title={`Delete ${g.name} and free their rooms`}
+                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, fontWeight: 700, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6 }}
                                                 >
                                                     <Trash2 size={13} />
+                                                    Delete
                                                 </button>
                                             </div>
                                         </td>
@@ -310,11 +314,28 @@ export default function Guests() {
                                     />
                                 </div>
                             </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-outline" onClick={closeModal}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={saving}>
-                                    {saving ? 'Saving...' : editId ? 'Update Guest' : 'Register Guest'}
-                                </button>
+                            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                                {editId ? (
+                                    <button
+                                        type="button"
+                                        className="btn btn-danger"
+                                        onClick={() => {
+                                            const g = guests.find(item => item.id === editId)
+                                            closeModal()
+                                            handleDelete(g || { id: editId, name: form.name, email: form.email })
+                                        }}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                                    >
+                                        <Trash2 size={14} />
+                                        Delete Guest (Free Rooms)
+                                    </button>
+                                ) : <div />}
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button type="button" className="btn btn-outline" onClick={closeModal}>Cancel</button>
+                                    <button type="submit" className="btn btn-primary" disabled={saving}>
+                                        {saving ? 'Saving...' : editId ? 'Update Guest' : 'Register Guest'}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>

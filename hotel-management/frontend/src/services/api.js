@@ -85,7 +85,7 @@ export const createBooking = d => api.post('/bookings.php', d)
 export const updateBooking = (id, d) => api.put(`/bookings.php?id=${id}`, d)
 export const checkInBooking = (id, d) => api.put(`/bookings.php?id=${id}`, { ...d, action: 'check_in' })
 export const checkOutBooking = (id, d) => api.put(`/bookings.php?id=${id}`, { ...d, action: 'check_out' })
-export const deleteBooking = id => api.delete(`/bookings.php?id=${id}`)
+export const deleteBooking = (id, deleteCustomer = false) => api.delete(`/bookings.php?id=${id}${deleteCustomer ? '&delete_customer=1' : ''}`)
 
 // Payment Methods Constant
 export const PAYMENT_METHODS = [

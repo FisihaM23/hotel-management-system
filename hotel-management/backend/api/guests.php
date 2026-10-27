@@ -117,13 +117,21 @@ switch ($method) {
         if (!$id) {
             json_fail(400, 'Guest ID is required');
         }
-        $stmt = $conn->prepare("DELETE FROM users WHERE id=? AND role='customer'");
-        $stmt->bind_param('i', $id);
-        executeOrFail($stmt, $conn);
-        if ($stmt->affected_rows < 1) {
-            json_fail(400, 'Guest could not be deleted (they may still have active bookings)');
+        $chk = $conn->prepare("SELECT role FROM users WHERE id = ?");
+        $chk->bind_param('i', $id);
+        $chk->execute();
+        $target = $chk->get_result()->fetch_assoc();
+        if (!$target) {
+            json_fail(404, 'Guest not found');
         }
-        json_ok(['message' => 'Guest deleted']);
+        if ($target['role'] !== 'customer') {
+            json_fail(403, 'Only guest / customer records can be deleted from the guest directory');
+        }
+        $res = deleteUserSafely($conn, $id);
+        if (!$res['success']) {
+            json_fail(400, $res['error']);
+        }
+        json_ok(['message' => 'Guest deleted successfully']);
         break;
 
     default:

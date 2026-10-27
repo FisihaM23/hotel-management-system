@@ -4,7 +4,24 @@ import toast from 'react-hot-toast'
 import { getRooms, createRoom, updateRoom, deleteRoom } from '../services/api'
 
 const emptyForm = { room_number: '', type: 'single', floor: 1, price_per_night: '', status: 'available', description: '', amenities: '', max_guests: 2 }
-const statusBadge = { available: 'badge-success', occupied: 'badge-warning', cleaning: 'badge-info', maintenance: 'badge-danger' }
+const statusBadge = { available: 'badge-success', occupied: 'badge-danger', cleaning: 'badge-info', maintenance: 'badge-warning' }
+
+const getRoomStatusMeta = (room) => {
+    const isBooked = room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked'
+    if (isBooked) {
+        return { label: 'Occupied', badge: 'badge-danger' }
+    }
+    if (room.status === 'available') {
+        return { label: 'Available', badge: 'badge-success' }
+    }
+    if (room.status === 'cleaning') {
+        return { label: 'Cleaning', badge: 'badge-info' }
+    }
+    if (room.status === 'maintenance') {
+        return { label: 'Maintenance', badge: 'badge-warning' }
+    }
+    return { label: room.status, badge: statusBadge[room.status] || 'badge-info' }
+}
 
 const roomImages = {
     'modern house': 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=400&auto=format&fit=crop',
@@ -52,7 +69,16 @@ export default function Rooms() {
         catch { toast.error('Failed to delete') }
     }
 
-    const filtered = rooms.filter(r => !filter || r.status === filter)
+    const filtered = rooms.filter(r => {
+        if (!filter) return true
+        if (filter === 'occupied') {
+            return r.status === 'occupied' || Number(r.is_booked) === 1 || r.status === 'booked'
+        }
+        if (filter === 'available') {
+            return r.status === 'available' && Number(r.is_booked) !== 1
+        }
+        return r.status === filter
+    })
 
     return (
         <div>
@@ -62,7 +88,7 @@ export default function Rooms() {
             </div>
 
             <div className="search-bar">
-                <select className="form-control" style={{ width: 160 }} value={filter} onChange={e => setFilter(e.target.value)}>
+                <select className="form-control" style={{ width: 170 }} value={filter} onChange={e => setFilter(e.target.value)}>
                     <option value="">All Status</option>
                     <option value="available">Available</option>
                     <option value="occupied">Occupied</option>
@@ -79,29 +105,43 @@ export default function Rooms() {
                             <BedDouble size={48} style={{ opacity: 0.3, margin: '0 auto 12px', display: 'block' }} />
                             <p>No rooms found</p>
                         </div>
-                    ) : filtered.map(room => (
-                        <div key={room.id} className="room-card">
-                            <img
-                                src={roomImages[room.type] || roomImages['single']}
-                                alt={room.type}
-                                style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: '8px 8px 0 0', display: 'block' }}
-                                onError={e => { e.target.style.display = 'none' }}
-                            />
-                            <div className="room-card-header">
-                                <div className="room-number">#{room.room_number}</div>
-                                <span className={`badge ${statusBadge[room.status]}`} style={{ textTransform: 'capitalize' }}>{room.status}</span>
+                    ) : filtered.map(room => {
+                        const { label: statusLabel, badge: badgeClass } = getRoomStatusMeta(room)
+                        return (
+                            <div key={room.id} className="room-card">
+                                <img
+                                    src={roomImages[room.type] || roomImages['single']}
+                                    alt={room.type}
+                                    style={{ width: '100%', height: 160, objectFit: 'cover', borderRadius: '8px 8px 0 0', display: 'block' }}
+                                    onError={e => { e.target.style.display = 'none' }}
+                                />
+                                <div className="room-card-header">
+                                    <div className="room-number">#{room.room_number}</div>
+                                    <span
+                                        className={`badge ${badgeClass}`}
+                                        style={{
+                                            fontWeight: 800,
+                                            fontSize: 11,
+                                            letterSpacing: '0.04em',
+                                            padding: '3px 9px',
+                                            borderRadius: 6
+                                        }}
+                                    >
+                                        {statusLabel}
+                                    </span>
+                                </div>
+                                <div className="room-type" style={{ textTransform: 'capitalize' }}>{room.type} — Floor {room.floor}</div>
+                                <div className="room-price">${Number(room.price_per_night).toFixed(2)} <span>/ night</span></div>
+                                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>Max {room.max_guests} guests</div>
+                                {room.amenities && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{room.amenities}</div>}
+                                {room.description && <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>{room.description}</p>}
+                                <div className="room-actions">
+                                    <button className="btn btn-outline btn-sm" onClick={() => openEdit(room)}><Pencil size={13} />Edit</button>
+                                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(room.id)}><Trash2 size={13} />Delete</button>
+                                </div>
                             </div>
-                            <div className="room-type" style={{ textTransform: 'capitalize' }}>{room.type} — Floor {room.floor}</div>
-                            <div className="room-price">${Number(room.price_per_night).toFixed(2)} <span>/ night</span></div>
-                            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>Max {room.max_guests} guests</div>
-                            {room.amenities && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>{room.amenities}</div>}
-                            {room.description && <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 6 }}>{room.description}</p>}
-                            <div className="room-actions">
-                                <button className="btn btn-outline btn-sm" onClick={() => openEdit(room)}><Pencil size={13} />Edit</button>
-                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(room.id)}><Trash2 size={13} />Delete</button>
-                            </div>
-                        </div>
-                    ))}
+                        )
+                    })}
                 </div>
             )}
 
@@ -144,7 +184,10 @@ export default function Rooms() {
                                     <div className="form-group">
                                         <label className="form-label">Status</label>
                                         <select className="form-control" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-                                            {['available', 'occupied', 'cleaning', 'maintenance'].map(s => <option key={s} value={s} style={{ textTransform: 'capitalize' }}>{s}</option>)}
+                                            <option value="available">Available</option>
+                                            <option value="occupied">Occupied</option>
+                                            <option value="cleaning">Cleaning</option>
+                                            <option value="maintenance">Maintenance</option>
                                         </select>
                                     </div>
                                 </div>

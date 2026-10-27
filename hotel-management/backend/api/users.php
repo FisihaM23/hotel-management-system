@@ -238,25 +238,15 @@ switch ($method) {
         if (!$id) {
             json_fail(400, 'User ID is required');
         }
-        // Protect current admin and primary admin account
+        // Protect current admin
         if ($id === (int) $authUser['id']) {
             json_fail(400, 'You cannot delete your own Administrator account');
         }
-        $chk = $conn->prepare("SELECT email FROM users WHERE id = ?");
-        $chk->bind_param('i', $id);
-        $chk->execute();
-        $target = $chk->get_result()->fetch_assoc();
-        if ($target && $target['email'] === 'befather7@gmail.com') {
-            json_fail(400, 'The primary Administrator account cannot be deleted');
+        $res = deleteUserSafely($conn, $id);
+        if (!$res['success']) {
+            json_fail(400, $res['error']);
         }
-
-        $stmt = $conn->prepare("DELETE FROM users WHERE id=?");
-        $stmt->bind_param('i', $id);
-        executeOrFail($stmt, $conn);
-        if ($stmt->affected_rows < 1) {
-            json_fail(400, 'User could not be deleted (they may still have related records)');
-        }
-        json_ok(['message' => 'User deleted successfully']);
+        json_ok(['message' => 'User and associated records deleted successfully']);
         break;
 
     default:

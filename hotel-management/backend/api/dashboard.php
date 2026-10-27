@@ -11,6 +11,17 @@ function withDefaults(array $defaults, array $counts) {
     return array_merge($defaults, array_intersect_key($counts, $defaults));
 }
 
+// Auto-heal: Ensure rooms marked 'occupied' return to 'available' if all bookings were deleted or completed
+$conn->query("UPDATE rooms r 
+    SET r.status = 'available' 
+    WHERE r.status = 'occupied' 
+    AND NOT EXISTS (
+        SELECT 1 FROM bookings b 
+        WHERE b.room_id = r.id 
+        AND b.status IN ('checked_in', 'confirmed') 
+        AND b.check_out >= CURDATE()
+    )");
+
 $roomStats = [];
 $result = $conn->query("SELECT status, COUNT(*) as count FROM rooms GROUP BY status");
 while ($result && $row = $result->fetch_assoc()) $roomStats[$row['status']] = (int) $row['count'];

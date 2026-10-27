@@ -19,6 +19,8 @@ import hotelBuildingImg from '../assets/hotel_building_park.jpg'
 import diningImg from '../assets/guests_dining_feeding.jpg'
 import drinksImg from '../assets/guests_refreshment_drinking.jpg'
 
+const HEADING_WORDS = ['Welcome', 'to', 'Your', 'Grand', 'Escape', 'Hotel', 'in', 'Ethiopia']
+
 export default function Landing() {
   const { user } = useAuth()
   const { currentTheme } = useTheme()
@@ -29,6 +31,14 @@ export default function Landing() {
   const [selectedRoom, setSelectedRoom] = useState(null)
   const [bookingModal, setBookingModal] = useState(false)
   const [submittingBooking, setSubmittingBooking] = useState(false)
+  const [headingAnimDone, setHeadingAnimDone] = useState(false)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setHeadingAnimDone(true)
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [])
 
   // Quick search bar state
   const [searchCheckIn, setSearchCheckIn] = useState('')
@@ -102,6 +112,14 @@ export default function Landing() {
       return toast.error('Check-out date must be after check-in date')
     }
     if (!form.name.trim()) return toast.error('Guest name is required')
+
+    const targetRoom = selectedRoom || rooms.find(item => String(item.id) === String(form.room_id))
+    const totalGuests = (Number(form.adults) || 1) + (Number(form.children) || 0)
+    const roomMaxCapacity = Number(targetRoom?.max_guests || 2)
+
+    if (targetRoom && totalGuests > roomMaxCapacity) {
+      return toast.error(`Room #${targetRoom.room_number} cannot be booked: ${totalGuests} guests exceeds the room's maximum capacity of ${roomMaxCapacity} guests.`)
+    }
 
     if (!user) {
       toast.info('Comfortable with our hotel? Please register or sign in to your guest account to confirm your reservation.')
@@ -254,14 +272,26 @@ export default function Landing() {
             style={{
               fontSize: 'clamp(28px, 5vw, 54px)',
               fontWeight: 900,
-              lineHeight: 1.12,
+              lineHeight: 1.15,
               letterSpacing: '-0.03em',
               marginBottom: 18,
               color: '#ffffff',
               textShadow: '0 4px 20px rgba(0,0,0,0.6)'
             }}
           >
-            Welcome to Your Grand Escape in Ethiopia
+            {HEADING_WORDS.map((word, idx) => (
+              <span
+                key={idx}
+                className={headingAnimDone ? 'hero-anim-word-done' : 'hero-anim-word'}
+                style={{
+                  marginRight: '0.28em',
+                  animationDelay: headingAnimDone ? undefined : `${idx * 0.15}s`
+                }}
+                onAnimationEnd={idx === HEADING_WORDS.length - 1 ? () => setHeadingAnimDone(true) : undefined}
+              >
+                {word}
+              </span>
+            ))}
           </h1>
 
           <p
@@ -670,7 +700,9 @@ export default function Landing() {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
             {filteredRooms.map(room => {
-              const isAvailable = room.status === 'available'
+              const isBooked = room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked'
+              const isAvailable = room.status === 'available' && !isBooked
+              const statusDisplay = isBooked ? 'Occupied' : (isAvailable ? 'Available' : room.status)
               const priceNum = Number(room.price_per_night) || 0
               const amenitiesList = room.amenities ? room.amenities.split(',').map(s => s.trim()) : ['WiFi', 'Smart TV', 'AC']
 
@@ -714,14 +746,16 @@ export default function Landing() {
                         padding: '4px 10px',
                         borderRadius: 20,
                         fontSize: 11,
-                        fontWeight: 700,
+                        fontWeight: 800,
                         textTransform: 'uppercase',
-                        background: isAvailable ? 'rgba(34,197,94,0.9)' : 'rgba(239,68,68,0.9)',
-                        color: isAvailable ? '#050805' : '#ffffff',
-                        backdropFilter: 'blur(4px)'
+                        letterSpacing: '0.04em',
+                        background: isBooked ? 'rgba(239,68,68,0.95)' : 'rgba(34,197,94,0.95)',
+                        color: isBooked ? '#ffffff' : '#050805',
+                        backdropFilter: 'blur(4px)',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
                       }}
                     >
-                      {room.status}
+                      {statusDisplay}
                     </div>
 
                     <div
@@ -760,6 +794,10 @@ export default function Landing() {
                         {room.description || `Comfortable ${room.type} suite with scenic hotel views, premium linens, and high-speed Wi-Fi.`}
                       </p>
 
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--tp-mute, #86a882)', marginBottom: 12 }}>
+                        <span>👥 Max {room.max_guests || 2} guests capacity</span>
+                      </div>
+
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
                         {amenitiesList.slice(0, 4).map((amenity, idx) => (
                           <span
@@ -781,8 +819,9 @@ export default function Landing() {
 
                     <button
                       type="button"
+                      disabled={isBooked}
                       onClick={() => handleOpenBooking(room)}
-                      className="btn btn-primary"
+                      className={isBooked ? "btn btn-outline" : "btn btn-primary"}
                       style={{
                         width: '100%',
                         fontWeight: 700,
@@ -791,12 +830,14 @@ export default function Landing() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: 6
+                        gap: 6,
+                        opacity: isBooked ? 0.6 : 1,
+                        cursor: isBooked ? 'not-allowed' : 'pointer'
                       }}
                     >
                       <BedDouble size={16} />
-                      <span>Book Room #{room.room_number}</span>
-                      <ArrowRight size={15} />
+                      <span>{isBooked ? 'Occupied' : 'Available'}</span>
+                      {!isBooked && <ArrowRight size={15} />}
                     </button>
                   </div>
                 </div>
@@ -1071,6 +1112,47 @@ export default function Landing() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--tp-mute, #86a882)' }}>Guests (Adults) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    className="form-control"
+                    value={form.adults || 1}
+                    onChange={e => setForm({ ...form, adults: Number(e.target.value) || 1 })}
+                    style={{ background: 'var(--tp-surf-2, #142014)', color: 'var(--tp-ink, #fff)' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--tp-mute, #86a882)' }}>Children</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    value={form.children || 0}
+                    onChange={e => setForm({ ...form, children: Number(e.target.value) || 0 })}
+                    style={{ background: 'var(--tp-surf-2, #142014)', color: 'var(--tp-ink, #fff)' }}
+                  />
+                </div>
+              </div>
+
+              {selectedRoom && ((Number(form.adults) || 1) + (Number(form.children) || 0)) > (selectedRoom.max_guests || 2) && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1.5px solid #ef4444',
+                  borderRadius: 8,
+                  padding: '8px 12px',
+                  color: '#f87171',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  marginBottom: 12
+                }}>
+                  ⚠️ Capacity exceeded: Room #{selectedRoom.room_number} accommodates up to {selectedRoom.max_guests || 2} guests (You selected {(Number(form.adults) || 1) + (Number(form.children) || 0)} guests).
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--tp-mute, #86a882)' }}>Select Suite / Room *</label>
                   <select
                     className="form-control"
@@ -1082,11 +1164,15 @@ export default function Landing() {
                     }}
                     style={{ background: 'var(--tp-surf-2, #142014)', color: 'var(--tp-ink, #fff)' }}
                   >
-                    {rooms.map(r => (
-                      <option key={r.id} value={r.id}>
-                        Room #{r.room_number} ({r.type} - Floor {r.floor}) • ETB {r.price_per_night}
-                      </option>
-                    ))}
+                    {rooms.map(r => {
+                      const isBooked = r.status === 'occupied' || Number(r.is_booked) === 1
+                      const statusTag = isBooked ? 'Occupied' : (r.status === 'available' ? 'Available' : r.status)
+                      return (
+                        <option key={r.id} value={r.id} disabled={isBooked || r.status === 'maintenance'}>
+                          Room #{r.room_number} ({r.type} - Floor {r.floor}) [{statusTag}] • Max {r.max_guests || 2} guests • ETB {r.price_per_night}
+                        </option>
+                      )
+                    })}
                   </select>
                 </div>
 

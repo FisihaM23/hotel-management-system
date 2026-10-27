@@ -171,6 +171,13 @@ export default function Bookings() {
         if (!form.check_in || !form.check_out) return toast.error('Check-in and check-out dates are required')
         if (form.check_in >= form.check_out) return toast.error('Check-out must be after check-in')
 
+        const selRoomObj = rooms.find(r => String(r.id) === String(form.room_id))
+        const totalGuests = (Number(form.adults) || 1) + (Number(form.children) || 0)
+        const roomMaxCapacity = Number(selRoomObj?.max_guests || 2)
+        if (selRoomObj && totalGuests > roomMaxCapacity) {
+            return toast.error(`Room #${selRoomObj.room_number} cannot be booked: The total number of guests (${totalGuests}) exceeds the room's maximum capacity of ${roomMaxCapacity} guests.`)
+        }
+
         let payload = {
             ...form,
             dining_items: diningPreOrder.items,
@@ -275,14 +282,24 @@ export default function Bookings() {
         }
     }
 
-    const handleDelete = async (id) => {
-        if (!confirm('Are you sure you want to delete this booking?')) return
+    const handleDelete = async (b) => {
+        const bookingId = typeof b === 'object' ? b.id : b
+        const bookingObj = typeof b === 'object' ? b : bookings.find(item => item.id === bookingId)
+        const guestName = bookingObj?.guest_name || 'this customer'
+        const roomNum = bookingObj?.room_number || ''
+
+        const confirmMsg = roomNum 
+            ? `Delete booking for customer "${guestName}" (Room #${roomNum})?\n\nRoom #${roomNum} will immediately change from OCCUPIED to AVAILABLE.`
+            : `Delete this booking for customer "${guestName}"?\n\nThe occupied room will immediately change to AVAILABLE.`
+
+        if (!confirm(confirmMsg)) return
+
         try {
-            await deleteBooking(id)
-            toast.success('Booking deleted')
+            await deleteBooking(bookingId)
+            toast.success(`Booking deleted successfully! Room ${roomNum ? '#' + roomNum : ''} is now Available.`)
             load()
-        } catch {
-            toast.error('Failed to delete booking')
+        } catch (err) {
+            toast.error(err.response?.data?.error || 'Failed to delete booking')
         }
     }
 
@@ -559,12 +576,24 @@ export default function Bookings() {
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <div style={{ display: 'flex', gap: 6 }}>
-                                                        <button className="btn btn-outline btn-sm btn-icon" onClick={() => openEdit(b)} title="Edit Booking">
+                                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                        <button
+                                                            className="btn btn-outline btn-sm"
+                                                            onClick={() => openEdit(b)}
+                                                            title="Edit Booking"
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 9px', fontSize: 12, fontWeight: 600 }}
+                                                        >
                                                             <Pencil size={13} />
+                                                            Edit
                                                         </button>
-                                                        <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(b.id)} title="Delete Booking">
+                                                        <button
+                                                            className="btn btn-danger btn-sm"
+                                                            onClick={() => handleDelete(b)}
+                                                            title={`Delete booking for ${b.guest_name} and free room`}
+                                                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', fontSize: 12, fontWeight: 700, background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6 }}
+                                                        >
                                                             <Trash2 size={13} />
+                                                            Delete
                                                         </button>
                                                     </div>
                                                 </td>
@@ -791,22 +820,37 @@ export default function Bookings() {
                                     </div>
                                     <select className="form-control" value={form.room_id} onChange={e => setForm({ ...form, room_id: e.target.value })} required>
                                         <option value="">-- Choose an Available Room --</option>
-                                        {(onlyAvailableRooms && !editId ? rooms.filter(r => r.status === 'available') : rooms).map(r => (
-                                            <option key={r.id} value={r.id} disabled={r.status === 'maintenance'}>
-                                                Room {r.room_number} — {r.type} [{r.status.toUpperCase()}] — ETB {Number(r.price_per_night).toLocaleString()}/night (Max {r.max_guests || 2} guests)
-                                            </option>
-                                        ))}
+                                        {(onlyAvailableRooms && !editId ? rooms.filter(r => r.status === 'available' && !r.is_booked) : rooms).map(r => {
+                                            const isBooked = r.status === 'occupied' || Number(r.is_booked) === 1
+                                            const statusText = isBooked ? 'OCCUPIED' : (r.status === 'available' ? 'AVAILABLE' : r.status.toUpperCase())
+                                            return (
+                                                <option key={r.id} value={r.id} disabled={r.status === 'maintenance' || isBooked}>
+                                                    Room {r.room_number} — {r.type} [{statusText}] — ETB {Number(r.price_per_night).toLocaleString()}/night (Max {r.max_guests || 2} guests)
+                                                </option>
+                                            )
+                                        })}
                                     </select>
                                 </div>
 
                                 {/* Room Info Banner if Selected */}
                                 {modalSelectedRoom && (
                                     <div style={{ background: '#eff6ff', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12, border: '1px solid #bfdbfe', color: '#1e40af' }}>
-                                        <div style={{ fontWeight: 600 }}>
-                                            Room {modalSelectedRoom.room_number} ({modalSelectedRoom.type}) — {modalSelectedRoom.status.toUpperCase()}
+                                        <div style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span>Room {modalSelectedRoom.room_number} ({modalSelectedRoom.type})</span>
+                                            <span style={{
+                                                fontSize: 11,
+                                                fontWeight: 800,
+                                                padding: '2px 8px',
+                                                borderRadius: 4,
+                                                background: (modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? '#fee2e2' : '#dcfce7',
+                                                color: (modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? '#b91c1c' : '#15803d',
+                                                border: `1px solid ${(modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? '#fca5a5' : '#86efac'}`
+                                            }}>
+                                                {(modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? 'OCCUPIED' : 'AVAILABLE'}
+                                            </span>
                                         </div>
-                                        <div style={{ color: '#4b5563', marginTop: 2 }}>
-                                            Rate: ETB {Number(modalSelectedRoom.price_per_night).toLocaleString()} per night • Max Guests: {modalSelectedRoom.max_guests || 2}
+                                        <div style={{ color: '#4b5563', marginTop: 4 }}>
+                                            Rate: ETB {Number(modalSelectedRoom.price_per_night).toLocaleString()} per night • Max Capacity: <strong>{modalSelectedRoom.max_guests || 2} guests</strong>
                                         </div>
                                     </div>
                                 )}
@@ -876,6 +920,21 @@ export default function Bookings() {
                                         <input className="form-control" type="number" min={0} value={form.children} onChange={e => setForm({ ...form, children: e.target.value })} />
                                     </div>
                                 </div>
+
+                                {modalSelectedRoom && ((Number(form.adults) || 1) + (Number(form.children) || 0)) > (modalSelectedRoom.max_guests || 2) && (
+                                    <div style={{
+                                        background: '#fef2f2',
+                                        border: '1.5px solid #ef4444',
+                                        borderRadius: 8,
+                                        padding: '8px 12px',
+                                        color: '#b91c1c',
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        marginBottom: 12
+                                    }}>
+                                        ⚠️ Capacity exceeded: Room #{modalSelectedRoom.room_number} allows a maximum of {modalSelectedRoom.max_guests || 2} guests. You have selected {(Number(form.adults) || 1) + (Number(form.children) || 0)} guests.
+                                    </div>
+                                )}
 
                                 <div className="form-group">
                                     <label className="form-label">Status</label>
@@ -947,11 +1006,28 @@ export default function Bookings() {
                                     </div>
                                 )}
                             </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-outline" onClick={closeModal}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={saving}>
-                                    {saving ? 'Processing...' : editId ? 'Update Booking' : 'Confirm Payment & Register Booking (Marks Room Occupied)'}
-                                </button>
+                            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                                {editId ? (
+                                    <button
+                                        type="button"
+                                        className="btn btn-danger"
+                                        onClick={() => {
+                                            const b = bookings.find(item => item.id === editId)
+                                            closeModal()
+                                            handleDelete(b || { id: editId })
+                                        }}
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                                    >
+                                        <Trash2 size={14} />
+                                        Delete Booking (Free Room)
+                                    </button>
+                                ) : <div />}
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                    <button type="button" className="btn btn-outline" onClick={closeModal}>Cancel</button>
+                                    <button type="submit" className="btn btn-primary" disabled={saving}>
+                                        {saving ? 'Processing...' : editId ? 'Update Booking' : 'Confirm Payment & Register Booking (Marks Room Occupied)'}
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>

@@ -215,6 +215,12 @@ export default function CustomerPortal() {
         if (!form.payment_method) return toast.error('Payment method is required before booking can be saved')
 
         const selectedRoomObj = rooms.find(r => r.id == form.room_id)
+        const totalGuests = (Number(form.adults) || 1) + (Number(form.children) || 0)
+        const roomMaxCapacity = Number(selectedRoomObj?.max_guests || 2)
+        if (selectedRoomObj && totalGuests > roomMaxCapacity) {
+            return toast.error(`Room #${selectedRoomObj.room_number} cannot be booked: The selected guests (${totalGuests}) exceeds the room's maximum capacity of ${roomMaxCapacity} guests. Please reduce the number of guests or choose a larger room.`)
+        }
+
         const stayNights = form.check_in && form.check_out ? Math.max(1, (new Date(form.check_out) - new Date(form.check_in)) / 86400000) : 1
         const stayCost = selectedRoomObj ? stayNights * Number(selectedRoomObj.price_per_night) : 0
         const totalDue = Number((stayCost + (diningPreOrder?.total || 0)).toFixed(2))
@@ -687,9 +693,9 @@ export default function CustomerPortal() {
                                         required
                                     >
                                         <option value="">-- Choose an Available Room --</option>
-                                        {rooms.filter(r => r.status === 'available').map(r => (
+                                        {rooms.filter(r => r.status === 'available' && !r.is_booked).map(r => (
                                             <option key={r.id} value={r.id}>
-                                                Room {r.room_number} — {r.type} (Available) — ETB {Number(r.price_per_night).toFixed(2)}/night (Max {r.max_guests} guests)
+                                                Room {r.room_number} — {r.type} [Available] — ETB {Number(r.price_per_night).toFixed(2)}/night (Max {r.max_guests} guests)
                                             </option>
                                         ))}
                                     </select>
@@ -697,8 +703,16 @@ export default function CustomerPortal() {
 
                                 {selectedRoom && (
                                     <div style={{ background: '#eff6ff', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, border: '1px solid #bfdbfe' }}>
-                                        <strong>Room {selectedRoom.room_number} ({selectedRoom.type})</strong>: {selectedRoom.description}
-                                        <div style={{ color: '#1e40af', marginTop: 4 }}>Amenities: {selectedRoom.amenities}</div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <strong>Room {selectedRoom.room_number} ({selectedRoom.type})</strong>
+                                            <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
+                                                AVAILABLE
+                                            </span>
+                                        </div>
+                                        <div style={{ color: '#1e40af', marginTop: 4 }}>
+                                            Rate: ETB {Number(selectedRoom.price_per_night).toFixed(2)}/night • Max Capacity: <strong>{selectedRoom.max_guests || 2} guests</strong>
+                                        </div>
+                                        {selectedRoom.amenities && <div style={{ color: '#4b5563', marginTop: 4 }}>Amenities: {selectedRoom.amenities}</div>}
                                     </div>
                                 )}
 
@@ -750,6 +764,21 @@ export default function CustomerPortal() {
                                         />
                                     </div>
                                 </div>
+
+                                {selectedRoom && ((Number(form.adults) || 1) + (Number(form.children) || 0)) > (selectedRoom.max_guests || 2) && (
+                                    <div style={{
+                                        background: '#fef2f2',
+                                        border: '1.5px solid #ef4444',
+                                        borderRadius: 8,
+                                        padding: '8px 12px',
+                                        color: '#b91c1c',
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        marginBottom: 12
+                                    }}>
+                                        ⚠️ Capacity exceeded: Room #{selectedRoom.room_number} allows a maximum of {selectedRoom.max_guests || 2} guests. You have selected {(Number(form.adults) || 1) + (Number(form.children) || 0)} guests.
+                                    </div>
+                                )}
 
                                 {/* Hotel Registration Rule Section */}
                                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 14, margin: '14px 0' }}>
