@@ -237,22 +237,33 @@ foreach ($users as [$name, $email, $role, $phone]) {
     }
 }
 
-// 4. Seed rooms
+// 4. Seed rooms (16 Luxury Rooms across 6 Floors)
 $roomCount = $conn->query("SELECT COUNT(*) as c FROM rooms")->fetch_assoc()['c'];
 if ($roomCount == 0) {
     $rooms = [
-        ['101','single',1,80.00,'available','Cozy single room','WiFi,TV,AC',1],
-        ['102','double',1,120.00,'available','Spacious double room','WiFi,TV,AC,Bathtub',2],
-        ['201','suite',2,250.00,'available','Luxury suite','WiFi,TV,AC,Jacuzzi,Balcony',3],
-        ['202','deluxe',2,180.00,'available','Deluxe with balcony','WiFi,TV,AC,Mini-bar',2],
-        ['301','penthouse',3,500.00,'available','Top floor penthouse','WiFi,TV,AC,Kitchen,Balcony',4],
+        ['101', 'single', 1, 80.00, 'available', 'Cozy single room with city view and park garden access', 'WiFi,TV,AC,Mini-bar', 1],
+        ['102', 'double', 1, 120.00, 'available', 'Spacious double room near ground lobby & park fountain', 'WiFi,TV,AC,Mini-bar,Bathtub', 2],
+        ['103', 'double', 1, 120.00, 'available', 'Double room with resort garden & park promenade view', 'WiFi,TV,AC', 2],
+        ['104', 'double', 1, 130.00, 'available', 'Ground floor garden terrace double room with direct park access', 'WiFi,Smart TV,AC,Mini-bar,Park Access', 2],
+        ['201', 'suite', 2, 250.00, 'available', 'Luxury suite with living area and international dining view', 'WiFi,TV,AC,Jacuzzi,Mini-bar,Balcony', 3],
+        ['202', 'deluxe', 2, 180.00, 'available', 'Deluxe room with balcony overlooking the dining terrace', 'WiFi,TV,AC,Mini-bar,Balcony', 2],
+        ['203', 'deluxe', 2, 180.00, 'available', 'Deluxe corner room on the dining level', 'WiFi,TV,AC,Mini-bar', 2],
+        ['204', 'suite', 2, 260.00, 'available', 'Second floor dining hospitality suite with private dining area', 'WiFi,Smart TV,AC,Jacuzzi,Mini-bar,Balcony', 3],
+        ['301', 'deluxe', 3, 190.00, 'available', 'Third floor refreshment terrace deluxe room near cocktail lounge', 'WiFi,TV,AC,Mini-bar,Balcony,Park View', 2],
+        ['302', 'double', 3, 150.00, 'available', 'Third floor double room overlooking the central resort park', 'WiFi,Smart TV,AC,Mini-bar,Balcony,Park View', 2],
+        ['401', 'deluxe', 4, 210.00, 'available', 'Executive 4th floor deluxe room overlooking the resort park', 'WiFi,Smart TV,AC,Mini-bar,Balcony,Park View', 2],
+        ['402', 'suite', 4, 280.00, 'available', 'Diplomatic 4th floor corner suite with private lounge', 'WiFi,Smart TV,AC,Jacuzzi,Mini-bar,Balcony,Park View', 3],
+        ['501', 'deluxe', 5, 240.00, 'available', 'Ambassador 5th floor deluxe suite next to Spa & Wellness center', 'WiFi,Smart TV,AC,Mini-bar,Balcony,Spa Access', 2],
+        ['502', 'suite', 5, 320.00, 'available', 'Grand VIP 5th floor luxury suite with panoramic park & city views', 'WiFi,Smart TV,AC,Jacuzzi,Balcony,Butler,Spa Access', 4],
+        ['601', 'penthouse', 6, 550.00, 'available', 'Top 6th-floor Royal Sky Penthouse with private rooftop park terrace', 'WiFi,Smart TV,AC,Jacuzzi,Kitchen,Balcony,Butler,Rooftop Park Access', 5],
+        ['602', 'suite', 6, 360.00, 'available', '6th-floor Sky Garden Suite directly facing the rooftop lounge', 'WiFi,Smart TV,AC,Jacuzzi,Mini-bar,Balcony,Skyline View', 3]
     ];
     foreach ($rooms as [$num,$type,$floor,$price,$status,$desc,$amen,$max]) {
         $stmt = $conn->prepare("INSERT INTO rooms (room_number,type,floor,price_per_night,status,description,amenities,max_guests) VALUES (?,?,?,?,?,?,?,?)");
         $stmt->bind_param("ssidsssi", $num,$type,$floor,$price,$status,$desc,$amen,$max);
         $stmt->execute();
     }
-    $steps[] = 'Rooms seeded';
+    $steps[] = 'Rooms seeded (16 rooms across 6 floors)';
 }
 
 // 5. Seed dining menu items
