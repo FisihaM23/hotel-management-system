@@ -13,6 +13,7 @@ import { useTheme } from '../context/ThemeContext'
 import ThemeSelector from '../components/ThemeSelector'
 import HotelBuildingParkShowcase from '../components/HotelBuildingParkShowcase'
 import HotelAIWidget from '../components/HotelAIWidget'
+import HotelHomepageHero from '../components/HotelHomepageHero'
 
 // High-res luxury hotel assets
 import hotelBuildingImg from '../assets/hotel_building_park.jpg'
@@ -151,285 +152,27 @@ export default function Landing() {
   return (
     <div className="landing-container" style={{ minHeight: '100vh', background: 'var(--tp-canvas, #050805)', color: 'var(--tp-ink, #e7ffe4)' }}>
 
-      {/* ── TOP HERO HEADER & BANNER ────────────────────────────────────────── */}
-      <header
-        className="landing-header"
+      {/* ── CINEMATIC 6-FLOOR HOTEL VIDEO HERO SECTION ─────────────────────── */}
+      <HotelHomepageHero
+        user={user}
+        onBookStay={() => handleOpenBooking()}
+        onExploreHotel={() => {
+          const el = document.getElementById('building-park-section')
+          if (el) el.scrollIntoView({ behavior: 'smooth' })
+        }}
+      />
+
+      {/* ── FLOATING SEARCH & AVAILABILITY BAR ───────────────────────────── */}
+      <div
+        className="landing-search-container"
         style={{
+          maxWidth: 1080,
+          margin: '-36px auto 30px',
+          padding: '0 20px',
           position: 'relative',
-          minHeight: '82vh',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          backgroundImage: `linear-gradient(180deg, rgba(5,8,5,0.7) 0%, rgba(5,8,5,0.92) 80%, var(--tp-canvas, #050805) 100%), url(${hotelBuildingImg})`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          borderBottom: '1px solid var(--tp-line, rgba(255,255,255,0.12))',
-          padding: '24px 28px 48px'
+          zIndex: 25
         }}
       >
-        {/* Top Navbar Row */}
-        <div className="landing-top-nav" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, zIndex: 10 }}>
-          <div className="landing-brand" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 12,
-                background: 'linear-gradient(135deg, var(--tp-acc, #22c55e), var(--tp-line, #16a34a))',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                flexShrink: 0
-              }}
-            >
-              <Hotel size={24} color="#050805" />
-            </div>
-            <div>
-              <div className="landing-brand-title" style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em', color: '#ffffff' }}>
-                Grand Hotel & Luxury Suites
-              </div>
-              <div className="landing-brand-sub" style={{ fontSize: 11, color: 'var(--tp-mute, #86a882)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 600 }}>
-                Resort Park & International Hospitality
-              </div>
-            </div>
-          </div>
-
-          <div className="landing-actions" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <ThemeSelector variant="dropdown" align="right" />
-
-            {user ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span
-                  style={{
-                    padding: '5px 12px',
-                    borderRadius: 20,
-                    background: 'rgba(255,255,255,0.08)',
-                    border: '1px solid var(--tp-line, rgba(255,255,255,0.2))',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: 'var(--tp-ink, #fff)'
-                  }}
-                >
-                  👋 {user.name} ({user.role})
-                </span>
-                {user.role === 'customer' ? (
-                  <Link
-                    to="/my-bookings"
-                    className="btn btn-sm btn-primary"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-                  >
-                    <BookOpen size={15} />
-                    My Bookings
-                  </Link>
-                ) : (
-                  <Link
-                    to="/dashboard"
-                    className="btn btn-sm btn-outline"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-                  >
-                    Operations Dashboard
-                  </Link>
-                )}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <Link to="/login" className="btn btn-sm btn-outline" style={{ fontWeight: 600 }}>
-                  Sign In
-                </Link>
-                <Link to="/register" className="btn btn-sm btn-primary" style={{ fontWeight: 700 }}>
-                  Register Customer
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Hero Headline and CTA */}
-        <div className="landing-hero" style={{ maxWidth: 900, margin: '60px auto 30px', textAlign: 'center', zIndex: 10 }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 16px',
-              borderRadius: 30,
-              background: 'rgba(255,255,255,0.08)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid var(--tp-line, rgba(255,255,255,0.2))',
-              marginBottom: 18,
-              fontSize: 12,
-              fontWeight: 700,
-              color: 'var(--tp-acc, #22c55e)'
-            }}
-          >
-            <Star size={14} fill="currentColor" />
-            <span>5-Star World-Class Resort & Luxury Hospitality</span>
-            <Sparkles size={14} />
-          </div>
-
-          <h1
-            style={{
-              fontSize: 'clamp(28px, 5vw, 54px)',
-              fontWeight: 900,
-              lineHeight: 1.15,
-              letterSpacing: '-0.03em',
-              marginBottom: 18,
-              color: '#ffffff',
-              textShadow: '0 4px 20px rgba(0,0,0,0.6)'
-            }}
-          >
-            {HEADING_WORDS.map((word, idx) => (
-              <span
-                key={idx}
-                className={headingAnimDone ? 'hero-anim-word-done' : 'hero-anim-word'}
-                style={{
-                  marginRight: '0.28em',
-                  animationDelay: headingAnimDone ? undefined : `${idx * 0.15}s`
-                }}
-                onAnimationEnd={idx === HEADING_WORDS.length - 1 ? () => setHeadingAnimDone(true) : undefined}
-              >
-                {word}
-              </span>
-            ))}
-          </h1>
-
-          <p
-            style={{
-              fontSize: 'clamp(14px, 2vw, 17px)',
-              lineHeight: 1.6,
-              color: '#cbd5e1',
-              maxWidth: 720,
-              margin: '0 auto 28px',
-              textShadow: '0 2px 10px rgba(0,0,0,0.8)'
-            }}
-          >
-            Immerse yourself in panoramic suites, scenic botanical gardens, Michelin-inspired Ethiopian and continental dining, and our 24/7 Bilingual AI Concierge.
-          </p>
-
-          {/* Quick Action Buttons */}
-          <div className="landing-hero-cta" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => handleOpenBooking()}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '13px 26px',
-                borderRadius: 30,
-                background: 'linear-gradient(135deg, var(--tp-acc, #22c55e), var(--tp-acc-2, #38bdf8))',
-                color: '#050805',
-                fontSize: 15,
-                fontWeight: 800,
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                transition: 'transform 0.15s ease'
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.03)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
-            >
-              <BedDouble size={18} />
-              <span>Reserve a Luxury Room</span>
-              <ArrowRight size={17} />
-            </button>
-
-            <a
-              href="#building-park-section"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '13px 22px',
-                borderRadius: 30,
-                background: 'rgba(34,197,94,0.18)',
-                backdropFilter: 'blur(8px)',
-                color: '#86efac',
-                fontSize: 14,
-                fontWeight: 700,
-                border: '1px solid rgba(34,197,94,0.4)',
-                textDecoration: 'none',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <Compass size={17} />
-              <span>Explore 6 Floors & Park</span>
-            </a>
-
-            {!user && (
-              <Link
-                to="/register"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '13px 22px',
-                  borderRadius: 30,
-                  background: 'rgba(255,255,255,0.12)',
-                  backdropFilter: 'blur(8px)',
-                  color: '#ffffff',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  border: '1px solid rgba(255,255,255,0.3)',
-                  textDecoration: 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Users size={17} />
-                <span>Register Customer</span>
-              </Link>
-            )}
-
-            <Link
-              to="/dining"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '13px 22px',
-                borderRadius: 30,
-                background: 'rgba(255,255,255,0.1)',
-                backdropFilter: 'blur(8px)',
-                color: '#ffffff',
-                fontSize: 14,
-                fontWeight: 700,
-                border: '1px solid rgba(255,255,255,0.25)',
-                textDecoration: 'none',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              <Utensils size={17} />
-              <span>Dining & Bar Menu</span>
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('open-hotel-ai', { detail: { query: 'Hello! What rooms are available today?' } }))
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '13px 22px',
-                borderRadius: 30,
-                background: 'rgba(2,132,199,0.25)',
-                backdropFilter: 'blur(8px)',
-                color: '#38bdf8',
-                fontSize: 14,
-                fontWeight: 700,
-                border: '1px solid rgba(56,189,248,0.4)',
-                cursor: 'pointer'
-              }}
-            >
-              <Sparkles size={17} />
-              <span>Ask Hotel AI Concierge</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ── FLOATING SEARCH & AVAILABILITY BAR ───────────────────────────── */}
         <div
           style={{
             maxWidth: 1040,
@@ -532,7 +275,7 @@ export default function Landing() {
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* ── KEY HIGHLIGHTS STATS BAR ────────────────────────────────────────── */}
       <section style={{ maxWidth: 1140, margin: '40px auto 20px', padding: '0 20px' }}>
@@ -848,7 +591,7 @@ export default function Landing() {
       </section>
 
       {/* ── ETHIOPIAN DINING & BEVERAGE BANNER ───────────────────────────────── */}
-      <section style={{ maxWidth: 1140, margin: '40px auto 60px', padding: '0 20px' }}>
+      <section id="dining-section" style={{ maxWidth: 1140, margin: '40px auto 60px', padding: '0 20px' }}>
         <div
           className="card"
           style={{
@@ -898,7 +641,7 @@ export default function Landing() {
       </section>
 
       {/* ── 24/7 BILINGUAL HOTEL AI CONCIERGE PROMO ─────────────────────────── */}
-      <section style={{ maxWidth: 1140, margin: '40px auto 60px', padding: '0 20px' }}>
+      <section id="services-section" style={{ maxWidth: 1140, margin: '40px auto 60px', padding: '0 20px' }}>
         <div
           style={{
             padding: '30px 32px',
@@ -953,6 +696,7 @@ export default function Landing() {
 
       {/* ── FOOTER ──────────────────────────────────────────────────────────── */}
       <footer
+        id="contact-section"
         style={{
           borderTop: '1px solid var(--tp-line, rgba(255,255,255,0.12))',
           padding: '40px 24px',

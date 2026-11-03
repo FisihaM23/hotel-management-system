@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/helpers.php';
+require_once '../config/otp_helper.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $_SERVER['REQUEST_METHOD'] !== 'GET') {
     json_fail(405, 'Method not allowed');
@@ -57,68 +58,33 @@ if ($action === 'login') {
     }
 }
 
-// ── 2. FORGOT PASSWORD (REQUEST RESET LINK) ─────────────────────────────────
+// ── 2. FORGOT PASSWORD (EMAIL OTP) ──────────────────────────────────────────
 if ($action === 'forgot_password') {
-    $email = trim($data['email'] ?? '');
-    if (empty($email)) {
-        json_fail(400, 'Email is required');
-    }
-    if (!isValidUserEmail($email)) {
-        json_fail(400, emailPolicyMessage());
-    }
-
-    $stmt = $conn->prepare("SELECT id, name, email, phone FROM users WHERE email = ? AND status = 'active'");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $user = $stmt->get_result()->fetch_assoc();
-
-    // Prevent email enumeration: respond with generic message if not found
-    if (!$user) {
-        json_ok([
-            'status' => 'success',
-            'message' => 'If that email exists in our system, password reset instructions have been generated.'
-        ]);
-    }
-
-    // Invalidate old tokens
-    $del = $conn->prepare("DELETE FROM password_resets WHERE email = ?");
-    $del->bind_param("s", $email);
-    $del->execute();
-
-    // Generate secure token (64 hex characters)
-    $token = bin2hex(random_bytes(32));
-
-    // Store new token with 1-hour expiry
-    $ins = $conn->prepare("INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))");
-    $ins->bind_param("ss", $email, $token);
-    $ins->execute();
-
-    $frontendOrigin = !empty($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'http://localhost:5173';
-    $resetLink = rtrim($frontendOrigin, '/') . '/reset-password?token=' . $token;
-
-    // Log notification for user
-    $notifMsg = "A password reset request was initiated. Reset link: " . $resetLink;
-    $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Password Reset Request', ?, 'warning')");
-    $notif->bind_param("is", $user['id'], $notifMsg);
-    $notif->execute();
-
-    json_ok([
-        'status' => 'success',
-        'message' => 'If that email exists in our system, password reset instructions have been generated.',
-        'token' => $token,
-        'reset_link' => $resetLink,
-        'expires_in' => '1 hour'
-    ]);
+    require __DIR__ . '/forgot_password.php';
+    exit;
 }
 
-// ── 3. VERIFY TOKEN ─────────────────────────────────────────────────────────
+// ── 2B. VERIFY OTP ──────────────────────────────────────────────────────────
+if ($action === 'verify_otp') {
+    require __DIR__ . '/verify_otp.php';
+    exit;
+}
+
+// ── 2C. RESEND OTP ──────────────────────────────────────────────────────────
+if ($action === 'resend_otp') {
+    require __DIR__ . '/resend_otp.php';
+    exit;
+}
+
+// ── 3. VERIFY TOKEN (LEGACY COMPATIBILITY) ──────────────────────────────────
 if ($action === 'verify_token') {
     $token = $_GET['token'] ?? ($data['token'] ?? '');
     if (empty($token)) {
         json_fail(400, 'Reset token is required');
     }
-    $stmt = $conn->prepare("SELECT email FROM password_resets WHERE token = ? AND used = 0 AND expires_at > NOW()");
-    $stmt->bind_param("s", $token);
+    $tokenHash = hashResetToken($token);
+    $stmt = $conn->prepare("SELECT email FROM password_resets WHERE (token = ? OR reset_token_hash = ?) AND used = 0 AND (expires_at > NOW() OR token_expires_at > NOW())");
+    $stmt->bind_param("ss", $token, $tokenHash);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
 
@@ -129,8 +95,13 @@ if ($action === 'verify_token') {
     }
 }
 
-// ── 4. RESET PASSWORD ───────────────────────────────────────────────────────
+// ── 4. RESET PASSWORD (SUPPORTS BOTH OTP RESET TOKEN & LEGACY) ──────────────
 if ($action === 'reset_password') {
+    if (!empty($data['reset_token'])) {
+        require __DIR__ . '/reset_password.php';
+        exit;
+    }
+
     $token = $data['token'] ?? '';
     $password = $data['password'] ?? '';
 

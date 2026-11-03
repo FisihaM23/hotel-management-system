@@ -98,6 +98,7 @@ class ErrorBoundary extends Component {
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
+import VerifyOTP from './pages/VerifyOTP'
 import ResetPassword from './pages/ResetPassword'
 import Dashboard from './pages/Dashboard'
 import Rooms from './pages/Rooms'
@@ -138,6 +139,7 @@ function AppRoutes() {
       <Route path="/login" element={!user ? <Login /> : <Navigate to={user.role === 'customer' ? '/' : '/dashboard'} replace />} />
       <Route path="/register" element={!user ? <Register /> : <Navigate to={user.role === 'customer' ? '/' : '/dashboard'} replace />} />
       <Route path="/forgot-password" element={!user ? <ForgotPassword /> : <Navigate to="/" replace />} />
+      <Route path="/verify-otp" element={!user ? <VerifyOTP /> : <Navigate to="/" replace />} />
       <Route path="/reset-password" element={!user ? <ResetPassword /> : <Navigate to="/" replace />} />
 
       {/* ── 3. PROTECTED OPERATIONS LAYOUT (Staff Operations & Customer Portal) ── */}

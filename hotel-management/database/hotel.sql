@@ -128,14 +128,27 @@ CREATE TABLE notifications (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- Password Reset Tokens
+-- Password Reset & Email OTP Verification
 CREATE TABLE IF NOT EXISTS password_resets (
   id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
   email VARCHAR(100) NOT NULL,
-  token VARCHAR(64) NOT NULL UNIQUE,
+  otp_hash VARCHAR(255) NULL,
   expires_at DATETIME NOT NULL,
-  used TINYINT DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  failed_attempts INT DEFAULT 0,
+  reset_token_hash VARCHAR(255) NULL,
+  token_expires_at DATETIME NULL,
+  is_verified TINYINT(1) DEFAULT 0,
+  used TINYINT(1) DEFAULT 0,
+  ip_address VARCHAR(45) NULL,
+  last_resend_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  token VARCHAR(64) NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_pr_email (email),
+  INDEX idx_pr_user_id (user_id),
+  INDEX idx_pr_reset_token_hash (reset_token_hash),
+  INDEX idx_pr_created_at (created_at)
 );
 
 -- Dining & Bar Menu Items

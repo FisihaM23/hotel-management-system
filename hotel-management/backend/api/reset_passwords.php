@@ -32,6 +32,24 @@ $conn->query("CREATE TABLE IF NOT EXISTS password_resets (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
 
+// ── DELEGATES FOR OTP PASSWORDS RESET ──────────────────────────────────────
+if ($action === 'verify_otp') {
+    require __DIR__ . '/verify_otp.php';
+    exit;
+}
+if ($action === 'resend' || $action === 'resend_otp') {
+    require __DIR__ . '/resend_otp.php';
+    exit;
+}
+if ($action === 'reset' && !empty(json_decode(file_get_contents('php://input'), true)['reset_token'])) {
+    require __DIR__ . '/reset_password.php';
+    exit;
+}
+if ($action === 'request' || $action === 'forgot_password') {
+    require __DIR__ . '/forgot_password.php';
+    exit;
+}
+
 // ── STEP 1: Request reset (POST ?action=request) ────────────────────────────
 if ($method === 'POST' && $action === 'request') {
     $data  = json_decode(file_get_contents('php://input'), true);

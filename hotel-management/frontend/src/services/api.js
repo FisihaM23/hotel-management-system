@@ -27,12 +27,18 @@ api.interceptors.response.use(
         const url = err.config?.url || ''
         const method = (err.config?.method || 'get').toLowerCase()
         const isPublicEndpoint = url.includes('auth.php') ||
+            url.includes('forgot_password.php') ||
+            url.includes('verify_otp.php') ||
+            url.includes('resend_otp.php') ||
+            url.includes('reset_password.php') ||
+            url.includes('reset_passwords.php') ||
             url.includes('test_connection.php') ||
             (method === 'get' && (url.includes('rooms.php') || url.includes('hotel_ai.php') || url.includes('dining.php')))
         const isPublicPage = typeof window !== 'undefined' && (
             window.location.pathname.startsWith('/login') ||
             window.location.pathname.startsWith('/register') ||
             window.location.pathname.startsWith('/forgot-password') ||
+            window.location.pathname.startsWith('/verify-otp') ||
             window.location.pathname.startsWith('/reset-password') ||
             window.location.pathname.startsWith('/landing') ||
             window.location.pathname === '/'
@@ -67,9 +73,17 @@ export const deleteUser = id => api.delete(`/users.php?id=${id}`)
 export const adminResetPassword = (id, d = {}) => api.post(`/users.php?action=admin_reset_password&id=${id}`, d)
 export const adminGenerateResetLink = id => api.post(`/users.php?action=generate_reset_link&id=${id}`)
 export const requestAccount = d => api.post('/auth.php?action=request_account', d)
-export const forgotPassword = d => api.post('/reset_passwords.php?action=request', d)
+
+// Secure 6-Digit Email OTP Password Reset APIs
+export const requestPasswordOtp = d => api.post('/forgot_password.php', d)
+export const verifyPasswordOtp = d => api.post('/verify_otp.php', d)
+export const resendPasswordOtp = d => api.post('/resend_otp.php', d)
+export const resetPasswordWithToken = d => api.post('/reset_password.php', d)
+
+// Backward-compatible legacy aliases
+export const forgotPassword = d => api.post('/forgot_password.php', d)
 export const verifyResetToken = token => api.get(`/reset_passwords.php?action=verify&token=${token}`)
-export const resetUserPassword = d => api.post('/reset_passwords.php?action=reset', d)
+export const resetUserPassword = d => api.post('/reset_password.php', d)
 
 // Guests
 export const getGuests = (search) => api.get('/guests.php' + (search ? `?search=${search}` : ''))

@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Africa/Addis_Ababa');
 define('DB_HOST', '127.0.0.1');
 define('DB_USER', 'root');
 define('DB_PASS', '');
@@ -18,5 +19,6 @@ function getConnection() {
         die(json_encode(['error' => 'DB connection failed: ' . $conn->connect_error]));
     }
     $conn->set_charset('utf8mb4');
+    $conn->query("SET time_zone = '+03:00'");
     return $conn;
 }
