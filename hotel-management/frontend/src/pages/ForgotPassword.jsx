@@ -86,7 +86,7 @@ export default function ForgotPassword() {
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="e.g. yourname@gmail.com"
+              placeholder="Enter your email"
               required
               autoFocus
               style={{ padding: '12px 14px', fontSize: 14 }}

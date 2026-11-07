@@ -11,8 +11,8 @@ export default function Login() {
   const [tab, setTab] = useState('login') // 'login' | 'signup'
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [email, setEmail] = useState('befather7@gmail.com')
-  const [password, setPassword] = useState('password123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
 
   // Account Request State
   const [reqName, setReqName] = useState('')
@@ -29,6 +29,10 @@ export default function Login() {
   const [regPass, setRegPass] = useState('')
   const [regConf, setRegConf] = useState('')
   const [regMode, setRegMode] = useState('register') // 'register' | 'request'
+
+  // Autofill suppression state so browser doesn't inject default credentials on load
+  const [focusedFields, setFocusedFields] = useState({})
+  const handleFocus = (field) => setFocusedFields(prev => ({ ...prev, [field]: true }))
 
   const { loginUser } = useAuth()
 
@@ -101,17 +105,25 @@ export default function Login() {
         } else {
           toast.success('✉️ Welcome email sent to your inbox!')
         }
-      } else {
-        toast.info('🎉 Welcome notification created in your guest portal!')
       }
-      // Auto-login newcomer customer directly to the landing page
+      // Direct seamless login using the token and user payload returned by the register endpoint
+      const sessionToken = regRes?.data?.token
+      const sessionUser = regRes?.data?.user
+      if (sessionToken && sessionUser) {
+        loginUser(sessionToken, sessionUser)
+        toast.success(`🎉 Welcome to Grand Hotel, ${sessionUser.name}!`)
+        setTimeout(() => { window.location.href = '/' }, 500)
+        return
+      }
+
+      // Auto-login fallback if token was not in register response
       try {
         const loginRes = await login({ email: regEmail.trim(), password: regPass })
         const { token, user } = loginRes.data
         if (token && user) {
           loginUser(token, user)
           toast.success(`🎉 Welcome to Grand Hotel, ${user.name}!`)
-          setTimeout(() => { window.location.href = '/' }, 600)
+          setTimeout(() => { window.location.href = '/' }, 500)
           return
         }
       } catch (loginErr) {
@@ -185,14 +197,37 @@ export default function Login() {
         {/* ── LOGIN ── */}
         {tab === 'login' && (
           <form onSubmit={handleLogin} autoComplete="off">
+            {/* Chrome autofill suppression decoys */}
+            <input
+              type="text"
+              name="fake_login_user"
+              tabIndex={-1}
+              autoComplete="username"
+              style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+              aria-hidden="true"
+            />
+            <input
+              type="password"
+              name="fake_login_pass"
+              tabIndex={-1}
+              autoComplete="current-password"
+              style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+              aria-hidden="true"
+            />
+
             <div className="form-group">
               <label className="form-label">Email Address</label>
               <input
                 className="form-control"
                 type="email"
+                name="hms_login_email"
+                id="hms_login_email"
+                autoComplete="off"
+                readOnly={!focusedFields.loginEmail}
+                onFocus={() => handleFocus('loginEmail')}
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="befather7@gmail.com or admin@hotel.com"
+                placeholder="Enter your email"
                 required
               />
             </div>
@@ -208,9 +243,14 @@ export default function Login() {
                 <input
                   className="form-control"
                   type={showPass ? 'text' : 'password'}
+                  name="hms_login_password"
+                  id="hms_login_password"
+                  autoComplete="new-password"
+                  readOnly={!focusedFields.loginPass}
+                  onFocus={() => handleFocus('loginPass')}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="password123"
+                  placeholder="Enter your password"
                   style={{ paddingRight: 40 }}
                   required
                 />
@@ -233,6 +273,18 @@ export default function Login() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
 
+            {/* Empty pure black (#000000) credentials display space */}
+            <div
+              style={{
+                width: '100%',
+                height: 40,
+                background: '#000000',
+                borderRadius: 8,
+                marginTop: 16
+              }}
+              aria-hidden="true"
+            />
+
             <p style={{ textAlign: 'center', marginTop: 18, fontSize: 13.5, color: 'var(--tp-mute)' }}>
               Don't have an account?{' '}
               <button
@@ -249,21 +301,17 @@ export default function Login() {
         {/* ── ACCOUNT PROVISIONING / SIGN UP ── */}
         {tab === 'signup' && (
           <div>
-            <div style={{
-              background: 'var(--tp-surf-2)',
-              border: '1px solid var(--tp-line)',
-              borderRadius: 10,
-              padding: '12px 14px',
-              marginBottom: 16,
-              fontSize: 12.5,
-              color: 'var(--tp-ink)',
-              lineHeight: 1.5
-            }}>
-              <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: 'var(--tp-acc)' }}>
-                <Shield size={16} /> Admin Account Creation Policy
-              </div>
-              All user accounts and credentials are created and managed by System Administrator <strong>Mulugeta Fisiha</strong> (<code>befather7@gmail.com</code>).
-            </div>
+            {/* Empty pure black (#000000) space replacing policy/demo banner */}
+            <div
+              style={{
+                width: '100%',
+                height: 48,
+                background: '#000000',
+                borderRadius: 10,
+                marginBottom: 16
+              }}
+              aria-hidden="true"
+            />
 
             {/* Sub-modes: Request from Admin vs Self-Register Customer */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
@@ -303,25 +351,41 @@ export default function Login() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={handleAccountRequest}>
+                <form onSubmit={handleAccountRequest} autoComplete="off">
+                  {/* Chrome autofill suppression decoys */}
+                  <input
+                    type="text"
+                    name="fake_req_user"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                    aria-hidden="true"
+                  />
                   <div className="form-group">
                     <label className="form-label">Full Name *</label>
                     <input
                       className="form-control"
+                      name="hms_req_name"
+                      autoComplete="off"
                       value={reqName}
                       onChange={e => setReqName(e.target.value)}
-                      placeholder="e.g. Abebe Bikila"
+                      placeholder="Full name"
                       required
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Email Address * <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(Must be @gmail.com or @icloud.com)</span></label>
+                    <label className="form-label">Email Address *</label>
                     <input
                       className="form-control"
                       type="email"
+                      name="hms_req_email"
+                      id="hms_req_email"
+                      autoComplete="off"
+                      readOnly={!focusedFields.reqEmail}
+                      onFocus={() => handleFocus('reqEmail')}
                       value={reqEmail}
                       onChange={e => setReqEmail(e.target.value)}
-                      placeholder="yourname@gmail.com or user@icloud.com"
+                      placeholder="Email address"
                       required
                     />
                   </div>
@@ -330,9 +394,11 @@ export default function Login() {
                       <label className="form-label">Phone</label>
                       <input
                         className="form-control"
+                        name="hms_req_phone"
+                        autoComplete="off"
                         value={reqPhone}
                         onChange={e => setReqPhone(e.target.value)}
-                        placeholder="+251 932 338 138"
+                        placeholder="Phone number"
                       />
                     </div>
                     <div className="form-group">
@@ -369,28 +435,64 @@ export default function Login() {
                     <Send size={14} style={{ marginRight: 6 }} />
                     {loading ? 'Submitting Request...' : 'Send Request to Administrator'}
                   </button>
+
+                  {/* Empty pure black (#000000) credentials display space */}
+                  <div
+                    style={{
+                      width: '100%',
+                      height: 40,
+                      background: '#000000',
+                      borderRadius: 8,
+                      marginTop: 16
+                    }}
+                    aria-hidden="true"
+                  />
                 </form>
               )
             ) : (
-              <form onSubmit={handleSignup}>
+              <form onSubmit={handleSignup} autoComplete="off">
+                {/* Chrome autofill suppression decoys */}
+                <input
+                  type="text"
+                  name="fake_remembered_user"
+                  tabIndex={-1}
+                  autoComplete="username"
+                  style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                  aria-hidden="true"
+                />
+                <input
+                  type="password"
+                  name="fake_remembered_pass"
+                  tabIndex={-1}
+                  autoComplete="current-password"
+                  style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                  aria-hidden="true"
+                />
                 <div className="form-group">
                   <label className="form-label">Full Name *</label>
                   <input
                     className="form-control"
+                    name="hms_guest_name"
+                    autoComplete="off"
                     value={regName}
                     onChange={e => setRegName(e.target.value)}
-                    placeholder="John Doe"
+                    placeholder="Full name"
                     required
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Email Address * <span style={{ fontSize: 11, color: 'var(--tp-acc)', fontWeight: 600 }}>(Must be @gmail.com or @icloud.com)</span></label>
+                  <label className="form-label">Email Address *</label>
                   <input
                     className="form-control"
                     type="email"
+                    name="hms_guest_reg_email"
+                    id="hms_guest_reg_email"
+                    autoComplete="off"
+                    readOnly={!focusedFields.regEmail}
+                    onFocus={() => handleFocus('regEmail')}
                     value={regEmail}
                     onChange={e => setRegEmail(e.target.value)}
-                    placeholder="yourname@gmail.com or user@icloud.com"
+                    placeholder="Email address"
                     required
                   />
                 </div>
@@ -398,9 +500,11 @@ export default function Login() {
                   <label className="form-label">Phone</label>
                   <input
                     className="form-control"
+                    name="hms_guest_phone"
+                    autoComplete="off"
                     value={regPhone}
                     onChange={e => setRegPhone(e.target.value)}
-                    placeholder="+251 932 338 138"
+                    placeholder="Phone number"
                   />
                 </div>
                 <div className="form-row">
@@ -409,9 +513,14 @@ export default function Login() {
                     <input
                       className="form-control"
                       type="password"
+                      name="hms_guest_reg_pass"
+                      id="hms_guest_reg_pass"
+                      autoComplete="new-password"
+                      readOnly={!focusedFields.regPass}
+                      onFocus={() => handleFocus('regPass')}
                       value={regPass}
                       onChange={e => setRegPass(e.target.value)}
-                      placeholder="Min 8 chars, mixed case, number & symbol"
+                      placeholder="Password"
                       required
                     />
                   </div>
@@ -420,9 +529,14 @@ export default function Login() {
                     <input
                       className="form-control"
                       type="password"
+                      name="hms_guest_reg_conf"
+                      id="hms_guest_reg_conf"
+                      autoComplete="new-password"
+                      readOnly={!focusedFields.regConf}
+                      onFocus={() => handleFocus('regConf')}
                       value={regConf}
                       onChange={e => setRegConf(e.target.value)}
-                      placeholder="Repeat"
+                      placeholder="Confirm password"
                       required
                     />
                   </div>
@@ -435,22 +549,39 @@ export default function Login() {
                 >
                   {loading ? 'Creating Account...' : 'Register Customer Account'}
                 </button>
+
+                {/* Empty pure black (#000000) credentials display space */}
+                <div
+                  style={{
+                    width: '100%',
+                    height: 40,
+                    background: '#000000',
+                    borderRadius: 8,
+                    marginTop: 16
+                  }}
+                  aria-hidden="true"
+                />
               </form>
             )}
 
-            {/* Administrator Direct Information */}
-            <div style={{ marginTop: 18, borderTop: '1px solid var(--tp-line)', paddingTop: 14, textAlign: 'center', fontSize: 12, color: 'var(--tp-mute)' }}>
-              <div>System Administrator: <strong>Mulugeta Fisiha</strong></div>
-              <div>Direct Email: <code>befather7@gmail.com</code> | Phone: <code>555-0001</code></div>
-              <div style={{ marginTop: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setTab('login')}
-                  style={{ background: 'none', border: 'none', color: 'var(--tp-acc)', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
-                >
-                  ← Back to Sign In
-                </button>
-              </div>
+            {/* Empty pure black (#000000) space replacing credentials area per requirements */}
+            <div
+              style={{
+                marginTop: 18,
+                height: 48,
+                background: '#000000',
+                borderRadius: 8
+              }}
+              aria-hidden="true"
+            />
+            <div style={{ marginTop: 12, textAlign: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setTab('login')}
+                style={{ background: 'none', border: 'none', color: 'var(--tp-acc)', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}
+              >
+                ← Back to Sign In
+              </button>
             </div>
           </div>
         )}

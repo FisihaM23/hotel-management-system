@@ -6,6 +6,7 @@ require_once '../config/notifications.php';
 
 $authUser = authenticate();
 $conn = getConnection();
+$conn->query("ALTER TABLE bookings MODIFY COLUMN room_id INT NULL");
 $conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS reason_for_stay VARCHAR(100) DEFAULT 'Tourism / Leisure'");
 $conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS id_proof VARCHAR(50) DEFAULT 'National ID'");
 $conn->query("ALTER TABLE users ADD COLUMN IF NOT EXISTS id_number VARCHAR(100) DEFAULT ''");
@@ -17,12 +18,17 @@ $staffRoles = ['admin', 'manager', 'receptionist'];
 
 $baseQuery = "SELECT b.*, u.name as guest_name, u.email as guest_email, u.phone as guest_phone,
               u.reason_for_stay, u.id_proof, u.id_number,
-              r.room_number, r.type as room_type, r.price_per_night,
+              COALESCE(r.room_number, 'Dining Only') as room_number,
+              COALESCE(r.type, 'Dining & Bar Feast') as room_type,
+              COALESCE(r.price_per_night, 0.00) as price_per_night,
               COALESCE(pay.paid_amount, 0) as paid_amount,
-              ROUND(GREATEST(0, b.total_amount - COALESCE(pay.paid_amount, 0)), 2) as balance_amount
+              ROUND(GREATEST(0, b.total_amount - COALESCE(pay.paid_amount, 0)), 2) as balance_amount,
+              staff.name as staff_name,
+              staff.role as staff_role
               FROM bookings b
               JOIN users u ON b.customer_id = u.id
-              JOIN rooms r ON b.room_id = r.id
+              LEFT JOIN rooms r ON b.room_id = r.id
+              LEFT JOIN users staff ON b.receptionist_id = staff.id
               LEFT JOIN (
                   SELECT booking_id, SUM(amount) as paid_amount 
                   FROM payments 
@@ -174,40 +180,65 @@ switch ($method) {
             }
         }
 
-        $room_id = (int) ($d['room_id'] ?? 0);
-        $check_in = $d['check_in'] ?? '';
-        $check_out = $d['check_out'] ?? '';
-        if (!$room_id || !$check_in || !$check_out || strtotime($check_out) <= strtotime($check_in)) {
-            json_fail(400, 'Valid room, check-in and check-out dates are required');
-        }
+        // Check if customer needs ONLY dining (room is optional)
+        $isDiningOnly = !empty($d['is_dining_only'])
+            || (empty($d['room_id']) && (!empty($d['dining_items']) || !empty($d['dining_total'])))
+            || (isset($d['room_id']) && $d['room_id'] === 'dining_only');
 
-        $stmt = $conn->prepare("SELECT room_number, price_per_night, status, max_guests FROM rooms WHERE id=?");
-        $stmt->bind_param('i', $room_id);
-        $stmt->execute();
-        $room = $stmt->get_result()->fetch_assoc();
-        if (!$room) {
-            json_fail(400, 'Room not found');
-        }
-        if ($room['status'] === 'maintenance') {
-            json_fail(400, 'Selected room is under maintenance');
-        }
-        if ($room['status'] === 'occupied') {
-            json_fail(400, 'Selected room is already booked');
-        }
-        if (roomHasOverlap($conn, $room_id, $check_in, $check_out)) {
-            json_fail(409, 'Room is already booked for those dates. Please select an available room.');
-        }
+        $room_id = null;
+        $room = null;
+        $roomTotal = 0.0;
+        $check_in = $d['check_in'] ?? date('Y-m-d');
+        $check_out = $d['check_out'] ?? date('Y-m-d', strtotime('+1 day'));
 
-        $adults = (int) ($d['adults'] ?? 1);
-        $children = (int) ($d['children'] ?? 0);
-        $totalGuests = max(1, $adults + $children);
-        $maxCapacity = (int) ($room['max_guests'] ?? 2);
-        if ($totalGuests > $maxCapacity) {
-            json_fail(400, "The number of guests ($totalGuests) exceeds Room {$room['room_number']}'s maximum capacity of $maxCapacity guests.");
-        }
+        if ($isDiningOnly) {
+            // Room is optional - Dining Only customer
+            $room_id = null;
+            if (strtotime($check_out) <= strtotime($check_in)) {
+                $check_out = date('Y-m-d', strtotime($check_in . ' +1 day'));
+            }
+            $room = [
+                'room_number' => 'Dining Only',
+                'price_per_night' => 0.00,
+                'status' => 'available',
+                'max_guests' => 99
+            ];
+            $roomTotal = 0.0;
+        } else {
+            // Standard accommodation with room
+            $room_id = (int) ($d['room_id'] ?? 0);
+            if (!$room_id || !$check_in || !$check_out || strtotime($check_out) <= strtotime($check_in)) {
+                json_fail(400, 'Valid room, check-in and check-out dates are required');
+            }
 
-        $nights = max(1, (strtotime($check_out) - strtotime($check_in)) / 86400);
-        $roomTotal = (float) $room['price_per_night'] * $nights;
+            $stmt = $conn->prepare("SELECT room_number, price_per_night, status, max_guests FROM rooms WHERE id=?");
+            $stmt->bind_param('i', $room_id);
+            $stmt->execute();
+            $room = $stmt->get_result()->fetch_assoc();
+            if (!$room) {
+                json_fail(400, 'Room not found');
+            }
+            if ($room['status'] === 'maintenance') {
+                json_fail(400, 'Selected room is under maintenance');
+            }
+            if ($room['status'] === 'occupied') {
+                json_fail(400, 'Selected room is already booked');
+            }
+            if (roomHasOverlap($conn, $room_id, $check_in, $check_out)) {
+                json_fail(409, 'Room is already booked for those dates. Please select an available room.');
+            }
+
+            $adults = (int) ($d['adults'] ?? 1);
+            $children = (int) ($d['children'] ?? 0);
+            $totalGuests = max(1, $adults + $children);
+            $maxCapacity = (int) ($room['max_guests'] ?? 2);
+            if ($totalGuests > $maxCapacity) {
+                json_fail(400, "The number of guests ($totalGuests) exceeds Room {$room['room_number']}'s maximum capacity of $maxCapacity guests.");
+            }
+
+            $nights = max(1, (strtotime($check_out) - strtotime($check_in)) / 86400);
+            $roomTotal = (float) $room['price_per_night'] * $nights;
+        }
 
         // Process Pre-Ordered Dining & Bar Items
         $diningItems = $d['dining_items'] ?? [];
@@ -240,11 +271,16 @@ switch ($method) {
             }
         }
 
+        // For dining-only customers, dining items are mandatory
+        if ($isDiningOnly && ($diningTotal <= 0 || empty($cleanDiningItems))) {
+            json_fail(400, 'For dining-only reservations, at least one menu item must be selected from the Dining & Bar menu.');
+        }
+
         $total = $roomTotal + $diningTotal;
         $recep = $authUser['role'] !== 'customer' ? $authUser['id'] : null;
         $special = trim($d['special_requests'] ?? '');
         if ($diningTotal > 0 && !empty($cleanDiningItems)) {
-            $deliveryPref = $d['dining_delivery_time'] ?? 'On arrival / Check-in';
+            $deliveryPref = $d['dining_delivery_time'] ?? ($isDiningOnly ? 'Restaurant Dine-In / Lounge' : 'On arrival / Check-in');
             $diningNote = "[Pre-ordered Dining & Bar: ETB " . number_format($diningTotal, 2) . " (" . count($cleanDiningItems) . " items) - Preference: " . $deliveryPref . "]";
             $special = $special ? ($special . "\n" . $diningNote) : $diningNote;
         }
@@ -255,8 +291,19 @@ switch ($method) {
         $txn = trim($d['transaction_id'] ?? ($d['tx_ref'] ?? ''));
         $notes = trim($d['notes'] ?? ($d['payment_notes'] ?? 'Direct Payment to Admin Account (0932338138 - Mulugeta Fisiha)'));
 
-        // Customer booking strictly requires payment before saving registration
-        if ($authUser['role'] === 'customer') {
+        // RULE: For Dining-Only customers, DUE is NOT permitted - Full payment is MANDATORY
+        if ($isDiningOnly) {
+            if ($deposit <= 0) {
+                $deposit = $total;
+            }
+            if ($deposit < $total - 0.01) {
+                json_fail(400, 'Due is not permitted for dining-only customers. Full payment of ETB ' . number_format($total, 2) . ' is mandatory before reservation can be confirmed.');
+            }
+            if (empty($payMethod)) {
+                json_fail(400, 'Full payment and payment method are mandatory for dining-only customers.');
+            }
+        } elseif ($authUser['role'] === 'customer') {
+            // Customer accommodation booking requires payment
             if ($deposit <= 0) {
                 $deposit = $total;
             }
@@ -265,7 +312,7 @@ switch ($method) {
             }
         }
 
-        $status = ($deposit > 0) ? 'confirmed' : 'pending';
+        $status = ($deposit >= $total - 0.01 || $deposit > 0) ? 'confirmed' : 'pending';
         if (in_array($authUser['role'], $staffRoles, true) && !empty($d['status'])) {
             $allowed = ['pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'];
             if (in_array($d['status'], $allowed, true)) {
@@ -275,26 +322,32 @@ switch ($method) {
         $adults = (int) ($d['adults'] ?? 1);
         $children = (int) ($d['children'] ?? 0);
 
-        $stmt = $conn->prepare("INSERT INTO bookings (customer_id,room_id,receptionist_id,check_in,check_out,adults,children,special_requests,total_amount,status) VALUES (?,?,?,?,?,?,?,?,?,?)");
-        $stmt->bind_param('iiissiisds', $customer_id, $room_id, $recep, $check_in, $check_out, $adults, $children, $special, $total, $status);
+        if ($room_id === null) {
+            $stmt = $conn->prepare("INSERT INTO bookings (customer_id,room_id,receptionist_id,check_in,check_out,adults,children,special_requests,total_amount,status) VALUES (?,NULL,?,?,?,?,?,?,?,?)");
+            $stmt->bind_param('iissiisds', $customer_id, $recep, $check_in, $check_out, $adults, $children, $special, $total, $status);
+        } else {
+            $stmt = $conn->prepare("INSERT INTO bookings (customer_id,room_id,receptionist_id,check_in,check_out,adults,children,special_requests,total_amount,status) VALUES (?,?,?,?,?,?,?,?,?,?)");
+            $stmt->bind_param('iiissiisds', $customer_id, $room_id, $recep, $check_in, $check_out, $adults, $children, $special, $total, $status);
+        }
         executeOrFail($stmt, $conn);
         $newId = $conn->insert_id;
 
-        // If dining items were pre-ordered, automatically create an order in dining_orders
+        // If dining items were ordered, automatically create an order in dining_orders
         if ($diningTotal > 0 && !empty($cleanDiningItems)) {
             $order_num = 'ORD-' . date('Y') . '-' . strtoupper(substr(uniqid(), -6));
             $itemsJson = json_encode($cleanDiningItems);
-            $deliveryType = 'room_service';
+            $deliveryType = $isDiningOnly ? 'restaurant_dine_in' : 'room_service';
             $orderStatus = 'pending';
             $paymentStatus = ($deposit >= $total) ? 'paid' : ($deposit > 0 ? 'partially_paid' : 'charged_to_room');
-            $diningNotes = 'Pre-ordered with Booking #' . $newId . ' (Time: ' . ($d['dining_delivery_time'] ?? 'On arrival') . '). ' . ($d['dining_notes'] ?? '');
+            $diningNotes = ($isDiningOnly ? 'Dining-Only Feast (No room needed). ' : ('Pre-ordered with Booking #' . $newId . '. ')) . ($d['dining_notes'] ?? '');
+            $roomNumDisplay = $isDiningOnly ? 'Dining Plaza' : $room['room_number'];
             
             $dStmt = $conn->prepare("INSERT INTO dining_orders (order_number, customer_id, room_number, items, total_amount, delivery_type, status, payment_status, special_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $dStmt->bind_param('sisdsssss', $order_num, $customer_id, $room['room_number'], $itemsJson, $diningTotal, $deliveryType, $orderStatus, $paymentStatus, $diningNotes);
+            $dStmt->bind_param('sisdsssss', $order_num, $customer_id, $roomNumDisplay, $itemsJson, $diningTotal, $deliveryType, $orderStatus, $paymentStatus, $diningNotes);
             $dStmt->execute();
         }
 
-        // If payment was provided, record payment, mark invoice paid, set room to OCCUPIED, and notify ALL workers!
+        // If payment was provided, record payment, mark invoice paid, and handle room status/notifications
         if ($deposit > 0) {
             if (!$txn) {
                 $txn = strtoupper($payMethod) . '-' . time() . '-' . rand(100, 999);
@@ -313,11 +366,6 @@ switch ($method) {
             $invStmt->bind_param('isdds', $newId, $invNumber, $invSub, $total, $invStatus);
             $invStmt->execute();
 
-            // Mark room status to OCCUPIED!
-            $rUpd = $conn->prepare("UPDATE rooms SET status='occupied' WHERE id=?");
-            $rUpd->bind_param('i', $room_id);
-            $rUpd->execute();
-
             // Look up guest details for broadcast
             $gStmt = $conn->prepare("SELECT name, phone, email FROM users WHERE id = ?");
             $gStmt->bind_param('i', $customer_id);
@@ -325,19 +373,36 @@ switch ($method) {
             $gUser = $gStmt->get_result()->fetch_assoc();
             $actualGuestName = $gUser['name'] ?? 'Valued Guest';
 
-            // Broadcast room occupied alert to ALL hotel workers (admin, manager, receptionist, housekeeping, maintenance)
-            broadcastRoomOccupiedAlert(
-                $conn,
-                $newId,
-                $room_id,
-                $room['room_number'],
-                $actualGuestName,
-                $deposit,
-                $payMethod,
-                $check_in,
-                $check_out,
-                $balanceDue
-            );
+            // If a room was booked, set room status to occupied and broadcast alert
+            if (!empty($room_id)) {
+                $rUpd = $conn->prepare("UPDATE rooms SET status='occupied' WHERE id=?");
+                $rUpd->bind_param('i', $room_id);
+                $rUpd->execute();
+
+                broadcastRoomOccupiedAlert(
+                    $conn,
+                    $newId,
+                    $room_id,
+                    $room['room_number'],
+                    $actualGuestName,
+                    $deposit,
+                    $payMethod,
+                    $check_in,
+                    $check_out,
+                    $balanceDue
+                );
+            } else {
+                // Broadcast dining-only feast order to all staff workers
+                $feastAlert = "🍽️ New Dining-Only Feast (#{$newId}): {$actualGuestName} paid in full (ETB " . number_format($total, 2) . ") via {$payMethod}. No room needed.";
+                $allWorkers = $conn->query("SELECT id FROM users WHERE role IN ('admin', 'manager', 'receptionist')");
+                if ($allWorkers) {
+                    while ($w = $allWorkers->fetch_assoc()) {
+                        $nStmt = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Dining-Only Feast Paid in Full', ?, 'success')");
+                        $nStmt->bind_param('is', $w['id'], $feastAlert);
+                        $nStmt->execute();
+                    }
+                }
+            }
 
             // Multi-channel payment confirmation notification (SMS to 0932338138, customer, email, telegram)
             dispatchPaymentNotification($conn, [

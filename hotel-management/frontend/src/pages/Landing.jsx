@@ -123,7 +123,7 @@ export default function Landing() {
     }
 
     if (!user) {
-      toast.info('Comfortable with our hotel? Please register or sign in to your guest account to confirm your reservation.')
+      toast('Comfortable with our hotel? Please register or sign in to your guest account to confirm your reservation.', { icon: 'ℹ️' })
       navigate('/register')
       return
     }
@@ -710,7 +710,7 @@ export default function Landing() {
             <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--tp-ink, #fff)' }}>Grand Hotel & Luxury Suites</span>
           </div>
           <p style={{ fontSize: 12, color: 'var(--tp-mute, #86a882)', marginBottom: 18 }}>
-            Addis Ababa, Ethiopia • 24/7 Reception Desk: 0932338138 • befather7@gmail.com
+            Addis Ababa, Ethiopia • 24/7 Reception Desk • Grand Hotel Luxury Suites
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 12, color: 'var(--tp-mute, #86a882)', marginBottom: 20 }}>
             <Link to="/dining">Dining & Bar</Link>
@@ -722,7 +722,7 @@ export default function Landing() {
             <Link to="/register">Create Account</Link>
           </div>
           <div style={{ fontSize: 11, color: 'var(--tp-mute, #64748b)' }}>
-            © {new Date().getFullYear()} HotelMS Management System. Developed with modern luxury tokens and responsive architecture.
+            © {new Date().getFullYear()} HotelMS Management System. All rights reserved.
           </div>
         </div>
       </footer>
@@ -811,7 +811,7 @@ export default function Landing() {
                     className="form-control"
                     value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })}
-                    placeholder="e.g. Abebe Bikila"
+                    placeholder="Full name"
                     style={{ background: 'var(--tp-surf-2, #142014)', color: 'var(--tp-ink, #fff)' }}
                   />
                 </div>
@@ -823,7 +823,7 @@ export default function Landing() {
                     className="form-control"
                     value={form.phone}
                     onChange={e => setForm({ ...form, phone: e.target.value })}
-                    placeholder="09..."
+                    placeholder="Phone number"
                     style={{ background: 'var(--tp-surf-2, #142014)', color: 'var(--tp-ink, #fff)' }}
                   />
                 </div>

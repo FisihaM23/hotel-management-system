@@ -35,6 +35,7 @@ export default function CustomerPortal() {
         diningNotes: ''
     })
     const [form, setForm] = useState({
+        is_dining_only: false,
         room_id: '',
         check_in: '',
         check_out: '',
@@ -70,6 +71,7 @@ export default function CustomerPortal() {
             diningNotes: ''
         })
         setForm({
+            is_dining_only: false,
             room_id: '',
             check_in: '',
             check_out: '',
@@ -208,25 +210,44 @@ export default function CustomerPortal() {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
-        if (!form.room_id) return toast.error('Please select an available room')
-        if (form.check_in >= form.check_out) return toast.error('Check-out must be after check-in')
+        const isDiningOnly = Boolean(form.is_dining_only)
+
+        if (!isDiningOnly && !form.room_id) return toast.error('Please select an available room')
+        if (isDiningOnly && (!diningPreOrder.items || diningPreOrder.items.length === 0)) {
+            return toast.error('Please select at least one item from the Dining & Bar menu for dining-only feast')
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0]
+        const checkInDate = form.check_in || todayStr
+        const checkOutDate = form.check_out || (isDiningOnly ? todayStr : '')
+
+        if (!isDiningOnly) {
+            if (!checkInDate || !checkOutDate) return toast.error('Check-in and check-out dates are required')
+            if (checkInDate >= checkOutDate) return toast.error('Check-out must be after check-in')
+        }
+
         if (!form.name?.trim()) return toast.error('Full name is required by hotel registration rules')
         if (!form.id_number?.trim()) return toast.error('ID number is required by hotel registration rules')
         if (!form.payment_method) return toast.error('Payment method is required before booking can be saved')
 
-        const selectedRoomObj = rooms.find(r => r.id == form.room_id)
+        const selectedRoomObj = !isDiningOnly ? rooms.find(r => r.id == form.room_id) : null
         const totalGuests = (Number(form.adults) || 1) + (Number(form.children) || 0)
         const roomMaxCapacity = Number(selectedRoomObj?.max_guests || 2)
         if (selectedRoomObj && totalGuests > roomMaxCapacity) {
             return toast.error(`Room #${selectedRoomObj.room_number} cannot be booked: The selected guests (${totalGuests}) exceeds the room's maximum capacity of ${roomMaxCapacity} guests. Please reduce the number of guests or choose a larger room.`)
         }
 
-        const stayNights = form.check_in && form.check_out ? Math.max(1, (new Date(form.check_out) - new Date(form.check_in)) / 86400000) : 1
-        const stayCost = selectedRoomObj ? stayNights * Number(selectedRoomObj.price_per_night) : 0
+        const stayNights = (!isDiningOnly && checkInDate && checkOutDate) ? Math.max(1, (new Date(checkOutDate) - new Date(checkInDate)) / 86400000) : 1
+        const stayCost = (!isDiningOnly && selectedRoomObj) ? stayNights * Number(selectedRoomObj.price_per_night) : 0
         const totalDue = Number((stayCost + (diningPreOrder?.total || 0)).toFixed(2))
 
         const payableAmount = form.payment_amount ? Number(form.payment_amount) : totalDue
         if (payableAmount <= 0) return toast.error('Payment amount must be greater than 0')
+
+        // MANDATORY RULE: Due is strictly NOT permitted for dining-only customers
+        if (isDiningOnly && payableAmount < totalDue - 0.01) {
+            return toast.error(`Due is strictly not permitted for Dining-Only customers. Full payment of ETB ${totalDue.toFixed(2)} is mandatory.`)
+        }
 
         if (form.payment_method !== 'chapa' && !form.transaction_id?.trim()) {
             return toast.error('Please enter transaction reference / receipt code to verify your payment')
@@ -234,20 +255,31 @@ export default function CustomerPortal() {
 
         setSaving(true)
         try {
+            const bookingPayload = {
+                ...form,
+                is_dining_only: isDiningOnly ? 1 : 0,
+                room_id: isDiningOnly ? null : (form.room_id || null),
+                check_in: checkInDate,
+                check_out: checkOutDate,
+                guest_id: user.id,
+                payment_method: form.payment_method,
+                payment_amount: payableAmount,
+                transaction_id: form.payment_method === 'chapa' 
+                    ? (form.transaction_id?.trim() || ('CHAPA-' + Date.now())) 
+                    : form.transaction_id.trim(),
+                status: form.payment_method === 'chapa' ? 'pending' : 'confirmed',
+                dining_items: diningPreOrder.items,
+                dining_total: diningPreOrder.total,
+                dining_delivery_time: diningPreOrder.deliveryTime,
+                dining_notes: diningPreOrder.diningNotes,
+                notes: form.payment_notes || (isDiningOnly 
+                    ? `Dining & Bar Feast Full Payment via ${form.payment_method}` 
+                    : `Direct Payment to Admin Account (0932338138 - Mulugeta Fisiha) via ${form.payment_method}`)
+            }
+
             if (form.payment_method === 'chapa') {
                 // Initialize booking with Chapa payment gateway
-                const res = await createBooking({
-                    ...form,
-                    guest_id: user.id,
-                    payment_method: 'chapa',
-                    payment_amount: payableAmount,
-                    transaction_id: form.transaction_id?.trim() || ('CHAPA-' + Date.now()),
-                    status: 'pending',
-                    dining_items: diningPreOrder.items,
-                    dining_total: diningPreOrder.total,
-                    dining_delivery_time: diningPreOrder.deliveryTime,
-                    dining_notes: diningPreOrder.diningNotes
-                })
+                const res = await createBooking(bookingPayload)
                 const newBookingId = res.data?.id
                 toast.success('Registration created! Opening Chapa payment gateway...')
                 setModal(false)
@@ -261,20 +293,11 @@ export default function CustomerPortal() {
                 })
             } else {
                 // Direct payment methods: Telebirr, CBE Birr, Awash, Cash, Card, Bank Transfer (Sent to Admin Account)
-                await createBooking({
-                    ...form,
-                    guest_id: user.id,
-                    payment_method: form.payment_method,
-                    payment_amount: payableAmount,
-                    transaction_id: form.transaction_id.trim(),
-                    notes: form.payment_notes || `Direct Payment to Admin Account (0932338138 - Mulugeta Fisiha) via ${form.payment_method}`,
-                    status: 'confirmed',
-                    dining_items: diningPreOrder.items,
-                    dining_total: diningPreOrder.total,
-                    dining_delivery_time: diningPreOrder.deliveryTime,
-                    dining_notes: diningPreOrder.diningNotes
-                })
-                toast.success('Payment recorded to Admin Account! Pop-up alert sent to Administrator phone.')
+                await createBooking(bookingPayload)
+                toast.success(isDiningOnly
+                    ? 'Dining & Bar Feast confirmed, 100% full payment recorded!'
+                    : 'Payment recorded to Admin Account! Pop-up alert sent to Administrator phone.'
+                )
                 setModal(false)
                 load()
             }
@@ -296,9 +319,9 @@ export default function CustomerPortal() {
         }
     }
 
-    const selectedRoom = rooms.find(r => r.id == form.room_id)
-    const nights = form.check_in && form.check_out ? Math.max(0, (new Date(form.check_out) - new Date(form.check_in)) / 86400000) : 0
-    const roomCost = selectedRoom ? nights * Number(selectedRoom.price_per_night) : 0
+    const selectedRoom = !form.is_dining_only ? rooms.find(r => r.id == form.room_id) : null
+    const nights = !form.is_dining_only && form.check_in && form.check_out ? Math.max(0, (new Date(form.check_out) - new Date(form.check_in)) / 86400000) : 0
+    const roomCost = !form.is_dining_only && selectedRoom ? nights * Number(selectedRoom.price_per_night) : 0
     const estimate = (roomCost + (diningPreOrder?.total || 0)).toFixed(2)
 
     const tabStyle = (active) => ({
@@ -533,12 +556,71 @@ export default function CustomerPortal() {
                     <div className="modal" style={{ maxWidth: 560 }}>
                         <div className="modal-header">
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <ShieldCheck color="#2563eb" size={20} /> Book an Available Room (Registration Rule)
+                                <ShieldCheck color="#2563eb" size={20} /> {form.is_dining_only ? 'Reserve Dining & Bar (Room Optional)' : 'Book an Available Room (Registration Rule)'}
                             </h3>
                             <button className="btn btn-icon btn-outline" onClick={() => setModal(false)}>✕</button>
                         </div>
                         <form onSubmit={handleSubmit}>
                             <div className="modal-body">
+                                {/* Service Mode Selector (Room Stay vs Dining Only) */}
+                                <div style={{ marginBottom: 14 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: '#f8fafc', padding: 4, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                                        <button
+                                            type="button"
+                                            style={{
+                                                padding: '8px 12px',
+                                                borderRadius: 6,
+                                                border: 'none',
+                                                background: !form.is_dining_only ? '#2563eb' : 'transparent',
+                                                color: !form.is_dining_only ? '#fff' : '#64748b',
+                                                fontWeight: 700,
+                                                fontSize: 13,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 6,
+                                                boxShadow: !form.is_dining_only ? '0 1px 3px rgba(37,99,235,0.2)' : 'none'
+                                            }}
+                                            onClick={() => setForm(prev => ({ ...prev, is_dining_only: false }))}
+                                        >
+                                            <span>🏨 Room Stay (+ Dining)</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            style={{
+                                                padding: '8px 12px',
+                                                borderRadius: 6,
+                                                border: 'none',
+                                                background: form.is_dining_only ? '#059669' : 'transparent',
+                                                color: form.is_dining_only ? '#fff' : '#64748b',
+                                                fontWeight: 700,
+                                                fontSize: 13,
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: 6,
+                                                boxShadow: form.is_dining_only ? '0 1px 3px rgba(5,150,105,0.2)' : 'none'
+                                            }}
+                                            onClick={() => setForm(prev => ({ ...prev, is_dining_only: true, room_id: '' }))}
+                                        >
+                                            <span>🍽️ Dining & Bar Only (No Room)</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {form.is_dining_only && (
+                                    <div style={{ background: '#ecfdf5', border: '1.5px solid #10b981', borderRadius: 8, padding: '10px 14px', marginBottom: 14, color: '#065f46', fontSize: 13 }}>
+                                        <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            🍽️ Dining & Bar Feast Reservation
+                                        </div>
+                                        <div style={{ fontSize: 12, marginTop: 4, color: '#047857', lineHeight: 1.4 }}>
+                                            Room is <strong>optional / not required</strong>. <strong>Due is strictly not permitted</strong> for Dining-Only customers — 100% full payment is mandatory before booking confirmation.
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* ── HOTEL AI PREDICTION & CONCIERGE ASSISTANT ── */}
                                 <div style={{
                                     background: 'linear-gradient(135deg, #0b192c 0%, #082f49 100%)',
@@ -685,15 +767,18 @@ export default function CustomerPortal() {
 
                                 {/* Room Selection */}
                                 <div className="form-group">
-                                    <label className="form-label">Available Room *</label>
+                                    <label className="form-label">
+                                        Available Room {form.is_dining_only ? <span style={{ color: '#059669', fontWeight: 600 }}>(Optional — Bypassed for Dining Only)</span> : '*'}
+                                    </label>
                                     <select
                                         className="form-control"
                                         value={form.room_id}
                                         onChange={e => setForm({ ...form, room_id: e.target.value })}
-                                        required
+                                        required={!form.is_dining_only}
+                                        style={{ border: form.is_dining_only ? '1px dashed #10b981' : undefined }}
                                     >
-                                        <option value="">-- Choose an Available Room --</option>
-                                        {rooms.filter(r => r.status === 'available' && !r.is_booked).map(r => (
+                                        <option value="">{form.is_dining_only ? '— No Room Needed (Dining & Bar Only) —' : '-- Choose an Available Room --'}</option>
+                                        {rooms.filter(r => r.status === 'available' && Number(r.is_booked) !== 1).map(r => (
                                             <option key={r.id} value={r.id}>
                                                 Room {r.room_number} — {r.type} [Available] — ETB {Number(r.price_per_night).toFixed(2)}/night (Max {r.max_guests} guests)
                                             </option>
@@ -701,7 +786,7 @@ export default function CustomerPortal() {
                                     </select>
                                 </div>
 
-                                {selectedRoom && (
+                                {selectedRoom && !form.is_dining_only && (
                                     <div style={{ background: '#eff6ff', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, border: '1px solid #bfdbfe' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <strong>Room {selectedRoom.room_number} ({selectedRoom.type})</strong>
@@ -719,25 +804,25 @@ export default function CustomerPortal() {
                                 {/* Stay Dates */}
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label className="form-label">Check In Date *</label>
+                                        <label className="form-label">{form.is_dining_only ? 'Dining Date (Optional)' : 'Check In Date *'}</label>
                                         <input
                                             className="form-control"
                                             type="date"
                                             min={new Date().toISOString().split('T')[0]}
                                             value={form.check_in}
                                             onChange={e => setForm({ ...form, check_in: e.target.value })}
-                                            required
+                                            required={!form.is_dining_only}
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Check Out Date *</label>
+                                        <label className="form-label">{form.is_dining_only ? 'Departure (Optional)' : 'Check Out Date *'}</label>
                                         <input
                                             className="form-control"
                                             type="date"
                                             min={form.check_in || new Date().toISOString().split('T')[0]}
                                             value={form.check_out}
                                             onChange={e => setForm({ ...form, check_out: e.target.value })}
-                                            required
+                                            required={!form.is_dining_only}
                                         />
                                     </div>
                                 </div>
@@ -803,7 +888,7 @@ export default function CustomerPortal() {
                                                 className="form-control"
                                                 value={form.phone}
                                                 onChange={e => setForm({ ...form, phone: e.target.value })}
-                                                placeholder="+251 91 123 4567"
+                                                placeholder="Phone number"
                                                 required
                                             />
                                         </div>
@@ -851,7 +936,7 @@ export default function CustomerPortal() {
                                             className="form-control"
                                             value={form.id_number}
                                             onChange={e => setForm({ ...form, id_number: e.target.value })}
-                                            placeholder="e.g. EP-998877 or Kebele ID #"
+                                            placeholder="ID number"
                                             required
                                         />
                                     </div>
@@ -861,19 +946,21 @@ export default function CustomerPortal() {
                                 <BookingDiningSelector
                                     selectedItems={diningPreOrder.items}
                                     onItemsChange={setDiningPreOrder}
-                                    roomNumber={selectedRoom?.room_number || ''}
+                                    roomNumber={selectedRoom?.room_number || 'Dining Plaza'}
                                     currency="ETB"
                                 />
 
-                                {nights > 0 && selectedRoom && (
+                                {(form.is_dining_only || (nights > 0 && selectedRoom) || diningPreOrder.total > 0) && (
                                     <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '12px 14px', marginBottom: 14, fontSize: 13, border: '1px solid #bbf7d0', color: '#166534', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span>🛏️ <strong>Room {selectedRoom.room_number}</strong> ({nights} night{nights > 1 ? 's' : ''})</span>
-                                            <span>ETB {roomCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                        </div>
+                                        {nights > 0 && selectedRoom && !form.is_dining_only && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span>🛏️ <strong>Room {selectedRoom.room_number}</strong> ({nights} night{nights > 1 ? 's' : ''})</span>
+                                                <span>ETB {roomCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                        )}
                                         {diningPreOrder.total > 0 && (
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#059669', fontWeight: 600 }}>
-                                                <span>🍽️ Pre-ordered Dining & Bar ({diningPreOrder.items.length} items)</span>
+                                                <span>🍽️ Dining & Bar Feast ({diningPreOrder.items.length} items)</span>
                                                 <span>+ETB {diningPreOrder.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                             </div>
                                         )}
@@ -881,21 +968,29 @@ export default function CustomerPortal() {
                                             <span>Total Value Due:</span>
                                             <span style={{ color: '#15803d' }}>ETB {Number(estimate).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
+                                        {form.is_dining_only && (
+                                            <div style={{ fontSize: 12, color: '#b91c1c', fontWeight: 700, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                ⚠️ Full payment is mandatory. Due is NOT permitted for Dining-Only customers.
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
                                 {/* MANDATORY PAYMENT REQUIREMENT SECTION */}
-                                <div style={{ background: '#f8fafc', border: '1.5px solid #3b82f6', borderRadius: 10, padding: 16, margin: '16px 0', boxShadow: '0 4px 12px rgba(59,130,246,0.08)' }}>
+                                <div style={{ background: '#f8fafc', border: form.is_dining_only ? '1.5px solid #10b981' : '1.5px solid #3b82f6', borderRadius: 10, padding: 16, margin: '16px 0', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <CreditCard size={18} color="#2563eb" /> Payment Required Before Registration
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: form.is_dining_only ? '#065f46' : '#1e3a8a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <CreditCard size={18} color={form.is_dining_only ? '#059669' : '#2563eb'} /> {form.is_dining_only ? 'Mandatory Full Payment (No Due Permitted)' : 'Payment Required Before Registration'}
                                         </div>
-                                        <span style={{ fontSize: 11, background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
-                                            Mandatory Step
+                                        <span style={{ fontSize: 11, background: form.is_dining_only ? '#d1fae5' : '#dbeafe', color: form.is_dining_only ? '#065f46' : '#1e40af', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                                            {form.is_dining_only ? 'Full Payment Only' : 'Mandatory Step'}
                                         </span>
                                     </div>
-                                    <p style={{ fontSize: 12, color: '#4b5563', margin: '0 0 12px', lineHeight: 1.5 }}>
-                                        Hotel registration policy requires payment before booking can be saved. Please select a payment method below to complete payment and immediately secure Room {selectedRoom?.room_number || ''}.
+                                    <p style={{ fontSize: 12, color: form.is_dining_only ? '#047857' : '#4b5563', margin: '0 0 12px', lineHeight: 1.5, fontWeight: form.is_dining_only ? 600 : 400 }}>
+                                        {form.is_dining_only
+                                            ? '🍽️ Dining-Only Policy: Full payment of 100% is mandatory. Dues or deferred payments are strictly prohibited for dining-only customers.'
+                                            : `Hotel registration policy requires payment before booking can be saved. Please select a payment method below to complete payment and immediately secure Room ${selectedRoom?.room_number || ''}.`
+                                        }
                                     </p>
 
                                     {/* Payment Method Selector Grid */}
@@ -1080,7 +1175,7 @@ export default function CustomerPortal() {
                                                 className="form-control"
                                                 value={form.transaction_id}
                                                 onChange={e => setForm({ ...form, transaction_id: e.target.value })}
-                                                placeholder={form.payment_method === 'chapa' ? 'Auto-generated or paste tx_ref' : 'e.g. EB-849204 or Receipt #'}
+                                                placeholder={form.payment_method === 'chapa' ? 'Auto-generated or paste tx_ref' : 'Transaction ID or receipt #'}
                                                 required={form.payment_method !== 'chapa'}
                                             />
                                         </div>

@@ -17,8 +17,8 @@ if (empty($email)) {
     json_fail(400, 'Email address is required');
 }
 
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    json_fail(400, 'Please provide a valid email address');
+if (!isValidUserEmail($email)) {
+    json_fail(400, emailPolicyMessage());
 }
 
 $clientIp = getClientIp();

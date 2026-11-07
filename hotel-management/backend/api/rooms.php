@@ -40,6 +40,9 @@ switch ($method) {
             $stmt->bind_param('i', $id);
             $stmt->execute();
             $room = $stmt->get_result()->fetch_assoc();
+            if ($room) {
+                $room['is_booked'] = (int) $room['is_booked'];
+            }
             json_ok($room);
         } elseif (!empty($status)) {
             $stmt = $conn->prepare("SELECT r.*,
@@ -49,14 +52,22 @@ switch ($method) {
                 FROM rooms r WHERE r.status=? ORDER BY r.room_number");
             $stmt->bind_param('s', $status);
             $stmt->execute();
-            json_ok($stmt->get_result()->fetch_all(MYSQLI_ASSOC));
+            $rooms = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            foreach ($rooms as &$rm) {
+                $rm['is_booked'] = (int) $rm['is_booked'];
+            }
+            json_ok($rooms);
         } else {
             $sql = "SELECT r.*,
                 CASE WHEN r.status = 'occupied' THEN 1
                      WHEN EXISTS (SELECT 1 FROM bookings b WHERE b.room_id = r.id AND b.status IN ('confirmed','checked_in') AND b.check_in <= CURDATE() AND b.check_out >= CURDATE()) THEN 1
                      ELSE 0 END AS is_booked
                 FROM rooms r ORDER BY r.room_number";
-            json_ok($conn->query($sql)->fetch_all(MYSQLI_ASSOC));
+            $rooms = $conn->query($sql)->fetch_all(MYSQLI_ASSOC);
+            foreach ($rooms as &$rm) {
+                $rm['is_booked'] = (int) $rm['is_booked'];
+            }
+            json_ok($rooms);
         }
         break;
 

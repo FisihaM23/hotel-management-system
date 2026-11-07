@@ -146,10 +146,26 @@ if ($action === 'create_order' && $method === 'POST') {
     $delivery = in_array($data['delivery_type'] ?? '', ['room_service', 'restaurant_dine_in', 'takeaway'], true)
         ? $data['delivery_type'] : 'room_service';
     $status = 'pending';
-    $payment = 'unpaid';
-    if (in_array($authUser['role'], $frontDesk, true)
-        && in_array($data['payment_status'] ?? '', ['unpaid', 'paid', 'charged_to_room'], true)) {
-        $payment = $data['payment_status'];
+
+    // Room is optional for dining-only customers (Restaurant Dine-In / Takeaway)
+    $isDiningOnly = empty($room_num) || $delivery !== 'room_service';
+
+    if ($isDiningOnly) {
+        $room_num = !empty($room_num) ? $room_num : 'Dining Plaza';
+        // For dining-only customers without a room, due is not permitted - full payment is mandatory
+        if (isset($data['payment_status']) && $data['payment_status'] === 'charged_to_room') {
+            json_fail(400, 'Charge to Room is only permitted for guests with an active room reservation.');
+        }
+        if (isset($data['payment_status']) && $data['payment_status'] === 'unpaid' && $authUser['role'] === 'customer') {
+            json_fail(400, 'Due is not permitted for dining-only orders. Full payment is mandatory.');
+        }
+        $payment = 'paid';
+    } else {
+        $payment = 'unpaid';
+        if (in_array($authUser['role'], $frontDesk, true)
+            && in_array($data['payment_status'] ?? '', ['unpaid', 'paid', 'charged_to_room'], true)) {
+            $payment = $data['payment_status'];
+        }
     }
     $notes = $data['special_notes'] ?? '';
 

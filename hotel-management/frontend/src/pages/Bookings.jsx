@@ -37,7 +37,8 @@ const emptyForm = {
     payment_method: 'telebirr',
     payment_amount: '',
     transaction_id: '',
-    notes: 'Booking registration payment'
+    notes: 'Booking registration payment',
+    is_dining_only: false
 }
 
 const emptyGuest = {
@@ -52,7 +53,10 @@ const emptyGuest = {
 
 export default function Bookings() {
     const { user } = useAuth()
-    const isAdmin = user && user.role === 'admin'
+    const userRole = user?.role || ''
+    const isAdmin = userRole === 'admin'
+    const isManager = userRole === 'manager'
+    const isReceptionist = userRole === 'receptionist'
     const [bookings, setBookings] = useState([])
     const [rooms, setRooms] = useState([])
     const [guests, setGuests] = useState([])
@@ -167,11 +171,23 @@ export default function Bookings() {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
-        if (!form.room_id) return toast.error('Please select an available room')
-        if (!form.check_in || !form.check_out) return toast.error('Check-in and check-out dates are required')
-        if (form.check_in >= form.check_out) return toast.error('Check-out must be after check-in')
+        const isDiningOnly = Boolean(form.is_dining_only)
 
-        const selRoomObj = rooms.find(r => String(r.id) === String(form.room_id))
+        if (!isDiningOnly && !form.room_id) return toast.error('Please select an available room')
+        if (isDiningOnly && (!diningPreOrder.items || diningPreOrder.items.length === 0)) {
+            return toast.error('Please select at least one item from the Dining & Bar menu for dining-only reservation')
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0]
+        const checkInDate = form.check_in || todayStr
+        const checkOutDate = form.check_out || (isDiningOnly ? todayStr : '')
+
+        if (!isDiningOnly) {
+            if (!checkInDate || !checkOutDate) return toast.error('Check-in and check-out dates are required')
+            if (checkInDate >= checkOutDate) return toast.error('Check-out must be after check-in')
+        }
+
+        const selRoomObj = !isDiningOnly ? rooms.find(r => String(r.id) === String(form.room_id)) : null
         const totalGuests = (Number(form.adults) || 1) + (Number(form.children) || 0)
         const roomMaxCapacity = Number(selRoomObj?.max_guests || 2)
         if (selRoomObj && totalGuests > roomMaxCapacity) {
@@ -180,6 +196,10 @@ export default function Bookings() {
 
         let payload = {
             ...form,
+            is_dining_only: isDiningOnly ? 1 : 0,
+            room_id: isDiningOnly ? null : (form.room_id || null),
+            check_in: checkInDate,
+            check_out: checkOutDate,
             dining_items: diningPreOrder.items,
             dining_total: diningPreOrder.total,
             dining_delivery_time: diningPreOrder.deliveryTime,
@@ -218,9 +238,8 @@ export default function Bookings() {
                 return toast.error('Payment method is required before booking registration can be saved')
             }
 
-            const selRoomObj = rooms.find(r => r.id == form.room_id)
-            const nights = form.check_in && form.check_out ? Math.max(1, (new Date(form.check_out) - new Date(form.check_in)) / 86400000) : 1
-            const roomCost = selRoomObj ? nights * Number(selRoomObj.price_per_night) : 0
+            const nights = (!isDiningOnly && checkInDate && checkOutDate) ? Math.max(1, (new Date(checkOutDate) - new Date(checkInDate)) / 86400000) : 1
+            const roomCost = (!isDiningOnly && selRoomObj) ? nights * Number(selRoomObj.price_per_night) : 0
             const calculatedTotal = roomCost + (diningPreOrder?.total || 0)
             const payAmount = form.payment_amount ? Number(form.payment_amount) : calculatedTotal
 
@@ -228,12 +247,17 @@ export default function Bookings() {
                 return toast.error('Payment amount must be greater than 0')
             }
 
+            // CRITICAL RULE: Due is strictly NOT permitted for dining-only customers
+            if (isDiningOnly && payAmount < calculatedTotal - 0.01) {
+                return toast.error(`Due is strictly not permitted for Dining-Only customers. Full payment of ETB ${calculatedTotal.toFixed(2)} is mandatory.`)
+            }
+
             payload = {
                 ...payload,
                 payment_method: form.payment_method,
                 payment_amount: payAmount,
                 transaction_id: form.transaction_id?.trim() || ('TXN-' + Date.now()),
-                payment_notes: form.notes || 'Front desk booking payment',
+                payment_notes: form.notes || (isDiningOnly ? 'Dining & Bar Feast Full Payment' : 'Front desk booking payment'),
                 status: 'confirmed'
             }
         } else {
@@ -247,7 +271,10 @@ export default function Bookings() {
                 toast.success('Booking updated')
             } else {
                 await createBooking(payload)
-                toast.success('Booking registered, payment recorded, room set to OCCUPIED, and all hotel staff notified!')
+                toast.success(isDiningOnly
+                    ? 'Dining-Only feast confirmed, 100% full payment recorded, and kitchen staff notified!'
+                    : 'Booking registered, payment recorded, room set to OCCUPIED, and all hotel staff notified!'
+                )
             }
             closeModal()
             load()
@@ -409,15 +436,54 @@ export default function Bookings() {
         return matchStatus && matchSearch
     })
 
-    const modalSelectedRoom = rooms.find(r => String(r.id) === String(form.room_id))
-    const modalNights = form.check_in && form.check_out && form.check_out > form.check_in
+    const modalSelectedRoom = !form.is_dining_only ? rooms.find(r => String(r.id) === String(form.room_id)) : null
+    const modalNights = !form.is_dining_only && form.check_in && form.check_out && form.check_out > form.check_in
         ? Math.max(1, Math.round((new Date(form.check_out) - new Date(form.check_in)) / 86400000))
         : 0
-    const modalRoomCost = modalSelectedRoom && modalNights > 0
+    const modalRoomCost = !form.is_dining_only && modalSelectedRoom && modalNights > 0
         ? modalNights * Number(modalSelectedRoom.price_per_night)
         : 0
     const modalEstimate = (modalRoomCost + (diningPreOrder?.total || 0)).toFixed(2)
-    const availableRoomsCount = rooms.filter(r => r.status === 'available').length
+    const availableRoomsCount = rooms.filter(r => r.status === 'available' && Number(r.is_booked) !== 1).length
+
+    // ── INCOME & REVENUE ATTRIBUTION RULES ──
+    // 1. Total Admin Income: All completed payments from all sources (manager, receptionist, customer online, admin)
+    const totalAdminIncome = bookings.reduce((sum, b) => sum + Number(b.paid_amount || 0), 0)
+
+    // 2. Manager Registered Income: Completed payments for bookings registered by manager
+    const managerIncome = bookings
+        .filter(b => b.staff_role === 'manager' || (isManager && Number(b.receptionist_id) === Number(user?.id)))
+        .reduce((sum, b) => sum + Number(b.paid_amount || 0), 0)
+
+    // 3. Receptionist Registered Income: Completed payments for bookings registered by reception
+    const receptionIncome = bookings
+        .filter(b => b.staff_role === 'receptionist' || (isReceptionist && Number(b.receptionist_id) === Number(user?.id)))
+        .reduce((sum, b) => sum + Number(b.paid_amount || 0), 0)
+
+    // 4. Customer Self-Registered Income: Bookings completed by customers on their own page (stored ONLY at Admin page)
+    const customerSelfIncome = bookings
+        .filter(b => !b.receptionist_id || b.staff_role === 'customer')
+        .reduce((sum, b) => sum + Number(b.paid_amount || 0), 0)
+
+    // Role-specific income to display on this booking page
+    const displayedIncome = isAdmin
+        ? totalAdminIncome
+        : (isManager ? managerIncome : receptionIncome)
+
+    const incomeCardTitle = isAdmin
+        ? 'Total Hotel Income (Admin)'
+        : (isManager ? 'Manager Registered Income' : 'Reception Desk Income')
+
+    const incomeCardSub = isAdmin
+        ? 'Consolidated across all channels'
+        : (isManager ? 'Income from Manager registered bookings' : 'Income from Reception registered bookings')
+
+    // Outstanding dues viewed for all staff users
+    const totalOutstandingDue = bookings
+        .filter(b => b.status !== 'cancelled')
+        .reduce((sum, b) => sum + Number(b.balance_amount || 0), 0)
+
+    const totalActiveBookings = bookings.filter(b => ['confirmed', 'checked_in'].includes(b.status)).length
 
     return (
         <div>
@@ -426,6 +492,57 @@ export default function Bookings() {
                 <button className="btn btn-primary" onClick={openAdd}>
                     <Plus size={16} /> New Booking
                 </button>
+            </div>
+
+            {/* Staff Role-Attributed Income & Due Metrics Banner */}
+            <div className="stats-grid" style={{ marginBottom: 20 }}>
+                <div className="stat-card" style={{ borderLeft: '4px solid #10b981' }}>
+                    <div className="stat-icon" style={{ background: '#d1fae5' }}>
+                        <CreditCard color="#059669" size={24} />
+                    </div>
+                    <div className="stat-info">
+                        <h3 style={{ color: '#065f46' }}>ETB {displayedIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+                        <p style={{ fontWeight: 600, color: '#047857', margin: '2px 0 0' }}>{incomeCardTitle}</p>
+                        <span style={{ fontSize: 11, color: '#6b7280' }}>{incomeCardSub}</span>
+                        {isAdmin && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, fontSize: 11 }}>
+                                <span style={{ background: '#f3f4f6', padding: '1px 6px', borderRadius: 4, color: '#374151', fontWeight: 500 }}>
+                                    👔 Mgr: ETB {managerIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </span>
+                                <span style={{ background: '#f3f4f6', padding: '1px 6px', borderRadius: 4, color: '#374151', fontWeight: 500 }}>
+                                    🛎️ Recep: ETB {receptionIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </span>
+                                <span style={{ background: '#f3f4f6', padding: '1px 6px', borderRadius: 4, color: '#374151', fontWeight: 500 }}>
+                                    🌐 Online/Self: ETB {customerSelfIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="stat-card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <div className="stat-icon" style={{ background: '#fef3c7' }}>
+                        <AlertCircle color="#d97706" size={24} />
+                    </div>
+                    <div className="stat-info">
+                        <h3 style={{ color: totalOutstandingDue > 0 ? '#b45309' : '#059669' }}>
+                            ETB {totalOutstandingDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </h3>
+                        <p style={{ fontWeight: 600, color: '#92400e', margin: '2px 0 0' }}>Total Outstanding Dues</p>
+                        <span style={{ fontSize: 11, color: '#6b7280' }}>All pending balances (Staff View)</span>
+                    </div>
+                </div>
+
+                <div className="stat-card" style={{ borderLeft: '4px solid #3b82f6' }}>
+                    <div className="stat-icon" style={{ background: '#dbeafe' }}>
+                        <CheckCircle2 color="#2563eb" size={24} />
+                    </div>
+                    <div className="stat-info">
+                        <h3 style={{ color: '#1d4ed8' }}>{totalActiveBookings}</h3>
+                        <p style={{ fontWeight: 600, color: '#1e40af', margin: '2px 0 0' }}>Active Occupancy / Confirmed</p>
+                        <span style={{ fontSize: 11, color: '#6b7280' }}>{availableRoomsCount} rooms available now</span>
+                    </div>
+                </div>
             </div>
 
             <div className="search-bar">
@@ -461,7 +578,8 @@ export default function Bookings() {
                                     <th>ID Proof</th>
                                     <th>Room</th>
                                     <th>Stay Dates</th>
-                                    <th>{isAdmin ? 'Financials (Total & Due)' : 'Payment Due'}</th>
+                                    <th>Financials (Total & Due)</th>
+                                    <th>Booked Via / Staff</th>
                                     <th>Status</th>
                                     <th>Front Desk</th>
                                     <th>Actions</th>
@@ -470,7 +588,7 @@ export default function Bookings() {
                             <tbody>
                                 {filtered.length === 0 ? (
                                     <tr>
-                                        <td colSpan={9} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>
+                                        <td colSpan={10} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>
                                             No bookings found
                                         </td>
                                     </tr>
@@ -506,30 +624,49 @@ export default function Bookings() {
                                                     <div style={{ fontSize: 11, color: '#9ca3af' }}>to {b.check_out}</div>
                                                 </td>
                                                 <td>
-                                                    {isAdmin ? (
-                                                        <>
-                                                            <div style={{ fontWeight: 600 }}>ETB {Number(b.total_amount || 0).toFixed(2)}</div>
-                                                            <div style={{ fontSize: 11 }}>
-                                                                {isPaid ? (
-                                                                    <span style={{ color: '#059669', fontWeight: 600 }}>✓ Settled</span>
-                                                                ) : (
-                                                                    <span style={{ color: '#dc2626', fontWeight: 600 }}>Due: ETB {balance.toFixed(2)}</span>
-                                                                )}
-                                                            </div>
-                                                        </>
+                                                    <div style={{ fontWeight: 600 }}>ETB {Number(b.total_amount || 0).toFixed(2)}</div>
+                                                    <div style={{ fontSize: 11, marginTop: 2 }}>
+                                                        {Number(b.paid_amount || 0) > 0 && (
+                                                            <span style={{ color: '#059669', marginRight: 6 }}>Paid: ETB {Number(b.paid_amount).toFixed(2)}</span>
+                                                        )}
+                                                        {isPaid ? (
+                                                            <span style={{ color: '#059669', fontWeight: 600 }}>✓ Settled</span>
+                                                        ) : (
+                                                            <span style={{ color: '#dc2626', fontWeight: 700 }}>Due: ETB {balance.toFixed(2)}</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    {b.staff_role ? (
+                                                        <span style={{
+                                                            fontSize: 11,
+                                                            fontWeight: 600,
+                                                            padding: '2px 8px',
+                                                            borderRadius: 6,
+                                                            background: b.staff_role === 'manager' ? '#ede9fe' : (b.staff_role === 'admin' ? '#fef3c7' : '#e0f2fe'),
+                                                            color: b.staff_role === 'manager' ? '#6d28d9' : (b.staff_role === 'admin' ? '#b45309' : '#0369a1'),
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 4
+                                                        }}>
+                                                            <span>{b.staff_role === 'manager' ? '👔' : (b.staff_role === 'admin' ? '🛡️' : '🛎️')}</span>
+                                                            <span>{b.staff_name || b.staff_role}</span>
+                                                        </span>
                                                     ) : (
-                                                        /* Other staff workers see ONLY the Due balance */
-                                                        <div>
-                                                            {isPaid ? (
-                                                                <span style={{ color: '#059669', fontWeight: 700, fontSize: 12, background: '#ecfdf5', padding: '3px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                                                    ✓ Settled (No Due)
-                                                                </span>
-                                                            ) : (
-                                                                <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 13, background: '#fef2f2', padding: '3px 8px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                                                    Due: ETB {balance.toFixed(2)}
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                        <span style={{
+                                                            fontSize: 11,
+                                                            fontWeight: 600,
+                                                            padding: '2px 8px',
+                                                            borderRadius: 6,
+                                                            background: '#f1f5f9',
+                                                            color: '#475569',
+                                                            display: 'inline-flex',
+                                                            alignItems: 'center',
+                                                            gap: 4
+                                                        }}>
+                                                            <span>🌐</span>
+                                                            <span>Customer Online</span>
+                                                        </span>
                                                     )}
                                                 </td>
                                                 <td>
@@ -613,15 +750,76 @@ export default function Bookings() {
                     <div className="modal" style={{ maxWidth: (!editId && guestMode === 'new_walk_in') ? 640 : 540 }}>
                         <div className="modal-header">
                             <div>
-                                <h3 style={{ margin: 0 }}>{editId ? 'Edit Booking' : 'New Room Booking'}</h3>
+                                <h3 style={{ margin: 0 }}>{editId ? 'Edit Booking' : (form.is_dining_only ? 'New Dining-Only Reservation' : 'New Room Booking')}</h3>
                                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#6b7280' }}>
-                                    {editId ? `Editing reservation #${editId}` : 'Register a guest and reserve an available room'}
+                                    {editId ? `Editing reservation #${editId}` : (form.is_dining_only ? 'Dining & Bar Feast (Room is optional, full payment mandatory)' : 'Register a guest and reserve an available room')}
                                 </p>
                             </div>
                             <button className="btn btn-icon btn-outline" onClick={closeModal}>✕</button>
                         </div>
                         <form onSubmit={handleSubmit}>
                             <div className="modal-body">
+                                {/* Service Mode Selector (Room Stay vs Dining Only) */}
+                                {!editId && (
+                                    <div style={{ marginBottom: 14 }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: '#f8fafc', padding: 4, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                                            <button
+                                                type="button"
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    borderRadius: 6,
+                                                    border: 'none',
+                                                    background: !form.is_dining_only ? '#2563eb' : 'transparent',
+                                                    color: !form.is_dining_only ? '#fff' : '#64748b',
+                                                    fontWeight: 700,
+                                                    fontSize: 13,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: 6,
+                                                    boxShadow: !form.is_dining_only ? '0 1px 3px rgba(37,99,235,0.2)' : 'none'
+                                                }}
+                                                onClick={() => setForm(prev => ({ ...prev, is_dining_only: false }))}
+                                            >
+                                                <span>🏨 Room Stay (+ Dining)</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    borderRadius: 6,
+                                                    border: 'none',
+                                                    background: form.is_dining_only ? '#059669' : 'transparent',
+                                                    color: form.is_dining_only ? '#fff' : '#64748b',
+                                                    fontWeight: 700,
+                                                    fontSize: 13,
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    gap: 6,
+                                                    boxShadow: form.is_dining_only ? '0 1px 3px rgba(5,150,105,0.2)' : 'none'
+                                                }}
+                                                onClick={() => setForm(prev => ({ ...prev, is_dining_only: true, room_id: '' }))}
+                                            >
+                                                <span>🍽️ Dining & Bar Only (No Room)</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {form.is_dining_only && (
+                                    <div style={{ background: '#ecfdf5', border: '1.5px solid #10b981', borderRadius: 8, padding: '10px 14px', marginBottom: 14, color: '#065f46', fontSize: 13 }}>
+                                        <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            🍽️ Dining-Only Guest Reservation
+                                        </div>
+                                        <div style={{ fontSize: 12, marginTop: 4, color: '#047857', lineHeight: 1.4 }}>
+                                            Room is <strong>optional / not required</strong>. <strong>Due is strictly not permitted</strong> for Dining-Only customers — 100% full payment is mandatory before booking confirmation.
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Mode Selector (Only on New Booking) */}
                                 {!editId && (
                                     <div style={{ marginBottom: 16 }}>
@@ -719,7 +917,7 @@ export default function Bookings() {
                                                 <label className="form-label">Guest Full Name *</label>
                                                 <input
                                                     className="form-control"
-                                                    placeholder="Full name (e.g. Abebe Bikila)"
+                                                    placeholder="Full name"
                                                     value={walkInForm.name}
                                                     onChange={e => setWalkInForm({ ...walkInForm, name: e.target.value })}
                                                     required={guestMode === 'new_walk_in'}
@@ -729,7 +927,7 @@ export default function Bookings() {
                                                 <label className="form-label">Contact Phone *</label>
                                                 <input
                                                     className="form-control"
-                                                    placeholder="+251 91 123 4567"
+                                                    placeholder="Phone number"
                                                     value={walkInForm.phone}
                                                     onChange={e => setWalkInForm({ ...walkInForm, phone: e.target.value })}
                                                     required={guestMode === 'new_walk_in'}
@@ -738,11 +936,11 @@ export default function Bookings() {
                                         </div>
                                         <div className="form-row">
                                             <div className="form-group">
-                                                <label className="form-label">Email Address (Optional) <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(@gmail.com or @icloud.com)</span></label>
+                                                <label className="form-label">Email Address (Optional)</label>
                                                 <input
                                                     type="email"
                                                     className="form-control"
-                                                    placeholder="guest@gmail.com or guest@icloud.com (or leave empty for auto)"
+                                                    placeholder="Email address (or leave empty for auto)"
                                                     value={walkInForm.email}
                                                     onChange={e => setWalkInForm({ ...walkInForm, email: e.target.value })}
                                                 />
@@ -786,7 +984,7 @@ export default function Bookings() {
                                                 <label className="form-label">ID Number / Kebele / Passport *</label>
                                                 <input
                                                     className="form-control"
-                                                    placeholder="e.g. EP-987654 or Kebele ID #"
+                                                    placeholder="ID number"
                                                     value={walkInForm.id_number}
                                                     onChange={e => setWalkInForm({ ...walkInForm, id_number: e.target.value })}
                                                     required={guestMode === 'new_walk_in'}
@@ -797,7 +995,7 @@ export default function Bookings() {
                                             <label className="form-label">Address / Origin City</label>
                                             <input
                                                 className="form-control"
-                                                placeholder="e.g. Addis Ababa, Bole Sub-city"
+                                                placeholder="City, sub-city, or address"
                                                 value={walkInForm.address}
                                                 onChange={e => setWalkInForm({ ...walkInForm, address: e.target.value })}
                                             />
@@ -808,19 +1006,29 @@ export default function Bookings() {
                                 {/* Room Selection */}
                                 <div className="form-group">
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                        <label className="form-label" style={{ margin: 0 }}>Select Room *</label>
-                                        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#2563eb', fontWeight: 600 }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={onlyAvailableRooms}
-                                                onChange={e => setOnlyAvailableRooms(e.target.checked)}
-                                            />
-                                            Only Available Rooms ({availableRoomsCount} available)
+                                        <label className="form-label" style={{ margin: 0 }}>
+                                            Select Room {form.is_dining_only ? <span style={{ color: '#059669', fontWeight: 600 }}>(Optional — Bypassed for Dining Only)</span> : '*'}
                                         </label>
+                                        {!form.is_dining_only && (
+                                            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: '#2563eb', fontWeight: 600 }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={onlyAvailableRooms}
+                                                    onChange={e => setOnlyAvailableRooms(e.target.checked)}
+                                                />
+                                                Only Available Rooms ({availableRoomsCount} available)
+                                            </label>
+                                        )}
                                     </div>
-                                    <select className="form-control" value={form.room_id} onChange={e => setForm({ ...form, room_id: e.target.value })} required>
-                                        <option value="">-- Choose an Available Room --</option>
-                                        {(onlyAvailableRooms && !editId ? rooms.filter(r => r.status === 'available' && !r.is_booked) : rooms).map(r => {
+                                    <select
+                                        className="form-control"
+                                        value={form.room_id}
+                                        onChange={e => setForm({ ...form, room_id: e.target.value })}
+                                        required={!form.is_dining_only}
+                                        style={{ border: form.is_dining_only ? '1px dashed #10b981' : undefined }}
+                                    >
+                                        <option value="">{form.is_dining_only ? '— No Room Needed (Dining & Bar Only) —' : '-- Choose an Available Room --'}</option>
+                                        {(onlyAvailableRooms && !editId ? rooms.filter(r => r.status === 'available' && Number(r.is_booked) !== 1) : rooms).map(r => {
                                             const isBooked = r.status === 'occupied' || Number(r.is_booked) === 1
                                             const statusText = isBooked ? 'OCCUPIED' : (r.status === 'available' ? 'AVAILABLE' : r.status.toUpperCase())
                                             return (
@@ -842,11 +1050,11 @@ export default function Bookings() {
                                                 fontWeight: 800,
                                                 padding: '2px 8px',
                                                 borderRadius: 4,
-                                                background: (modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? '#fee2e2' : '#dcfce7',
-                                                color: (modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? '#b91c1c' : '#15803d',
-                                                border: `1px solid ${(modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? '#fca5a5' : '#86efac'}`
+                                                background: (modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? '#fee2e2' : '#dcfce7',
+                                                color: (modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? '#b91c1c' : '#15803d',
+                                                border: `1px solid ${(modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? '#fca5a5' : '#86efac'}`
                                             }}>
-                                                {(modalSelectedRoom.status === 'occupied' || modalSelectedRoom.is_booked) ? 'OCCUPIED' : 'AVAILABLE'}
+                                                {(modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? 'OCCUPIED' : 'AVAILABLE'}
                                             </span>
                                         </div>
                                         <div style={{ color: '#4b5563', marginTop: 4 }}>
@@ -858,24 +1066,24 @@ export default function Bookings() {
                                 {/* Stay Dates */}
                                 <div className="form-row">
                                     <div className="form-group">
-                                        <label className="form-label">Check In *</label>
+                                        <label className="form-label">{form.is_dining_only ? 'Dining Date (Optional)' : 'Check In *'}</label>
                                         <input
                                             className="form-control"
                                             type="date"
                                             value={form.check_in}
                                             onChange={e => setForm({ ...form, check_in: e.target.value })}
-                                            required
+                                            required={!form.is_dining_only}
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Check Out *</label>
+                                        <label className="form-label">{form.is_dining_only ? 'Departure (Optional)' : 'Check Out *'}</label>
                                         <input
                                             className="form-control"
                                             type="date"
                                             min={form.check_in || undefined}
                                             value={form.check_out}
                                             onChange={e => setForm({ ...form, check_out: e.target.value })}
-                                            required
+                                            required={!form.is_dining_only}
                                         />
                                     </div>
                                 </div>
@@ -885,21 +1093,23 @@ export default function Bookings() {
                                     <BookingDiningSelector
                                         selectedItems={diningPreOrder.items}
                                         onItemsChange={setDiningPreOrder}
-                                        roomNumber={modalSelectedRoom?.room_number || ''}
+                                        roomNumber={modalSelectedRoom?.room_number || 'Dining Plaza'}
                                         currency="ETB"
                                     />
                                 )}
 
                                 {/* Cost summary banner */}
-                                {modalSelectedRoom && modalNights > 0 && (
+                                {(form.is_dining_only || (modalSelectedRoom && modalNights > 0) || diningPreOrder.total > 0) && (
                                     <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', marginBottom: 14, color: '#166534', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span>🛏️ <strong>Room {modalSelectedRoom.room_number}</strong> × {modalNights} night{modalNights > 1 ? 's' : ''}</span>
-                                            <span>ETB {modalRoomCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                        </div>
+                                        {modalSelectedRoom && modalNights > 0 && !form.is_dining_only && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span>🛏️ <strong>Room {modalSelectedRoom.room_number}</strong> × {modalNights} night{modalNights > 1 ? 's' : ''}</span>
+                                                <span>ETB {modalRoomCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                        )}
                                         {diningPreOrder.total > 0 && (
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#059669', fontWeight: 600 }}>
-                                                <span>🍽️ Pre-ordered Dining & Bar ({diningPreOrder.items.length} items)</span>
+                                                <span>🍽️ Dining & Bar Feast ({diningPreOrder.items.length} items)</span>
                                                 <span>+ETB {diningPreOrder.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                             </div>
                                         )}
@@ -907,6 +1117,11 @@ export default function Bookings() {
                                             <span>Total Value Payable:</span>
                                             <span style={{ color: '#15803d' }}>ETB {Number(modalEstimate).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         </div>
+                                        {form.is_dining_only && (
+                                            <div style={{ fontSize: 12, color: '#b91c1c', fontWeight: 700, marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                ⚠️ Full payment is mandatory. Due is NOT permitted for Dining-Only customers.
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -953,17 +1168,20 @@ export default function Bookings() {
                                 </div>
 
                                 {!editId && (
-                                    <div style={{ background: '#f8fafc', border: '1.5px solid #3b82f6', borderRadius: 10, padding: 14, margin: '14px 0', boxShadow: '0 2px 8px rgba(59,130,246,0.06)' }}>
+                                    <div style={{ background: '#f8fafc', border: form.is_dining_only ? '1.5px solid #10b981' : '1.5px solid #3b82f6', borderRadius: 10, padding: 14, margin: '14px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                                <CreditCard size={16} color="#2563eb" /> Payment Required Before Registration
+                                            <div style={{ fontSize: 13, fontWeight: 700, color: form.is_dining_only ? '#065f46' : '#1e3a8a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                <CreditCard size={16} color={form.is_dining_only ? '#059669' : '#2563eb'} /> {form.is_dining_only ? 'Mandatory Full Payment (No Due Permitted)' : 'Payment Required Before Registration'}
                                             </div>
-                                            <span style={{ fontSize: 11, background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
-                                                Mandatory
+                                            <span style={{ fontSize: 11, background: form.is_dining_only ? '#d1fae5' : '#dbeafe', color: form.is_dining_only ? '#065f46' : '#1e40af', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+                                                {form.is_dining_only ? 'Full Payment Only' : 'Mandatory'}
                                             </span>
                                         </div>
-                                        <p style={{ fontSize: 12, color: '#4b5563', margin: '0 0 10px', lineHeight: 1.4 }}>
-                                            Record payment details before saving. When submitted, the room will immediately be marked <strong>Occupied</strong> and all hotel staff will receive the occupancy broadcast.
+                                        <p style={{ fontSize: 12, color: form.is_dining_only ? '#047857' : '#4b5563', margin: '0 0 10px', lineHeight: 1.4, fontWeight: form.is_dining_only ? 600 : 400 }}>
+                                            {form.is_dining_only
+                                                ? '🍽️ Dining-Only Policy: Full payment of 100% is mandatory. Dues or deferred payments are strictly prohibited for dining-only customers.'
+                                                : 'Record payment details before saving. When submitted, the room will immediately be marked Occupied and all hotel staff will receive the occupancy broadcast.'
+                                            }
                                         </p>
 
                                         <div className="form-row">
@@ -1058,14 +1276,14 @@ export default function Bookings() {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Email * <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(Must be @gmail.com or @icloud.com)</span></label>
+                                        <label className="form-label">Email *</label>
                                         <input
                                             className="form-control"
                                             type="email"
                                             value={quickGuestForm.email}
                                             onChange={e => setQuickGuestForm({ ...quickGuestForm, email: e.target.value })}
                                             required
-                                            placeholder="guest@gmail.com or guest@icloud.com"
+                                            placeholder="Email address"
                                         />
                                     </div>
                                 </div>
@@ -1077,7 +1295,7 @@ export default function Bookings() {
                                             className="form-control"
                                             value={quickGuestForm.phone}
                                             onChange={e => setQuickGuestForm({ ...quickGuestForm, phone: e.target.value })}
-                                            placeholder="+251 91 123 4567"
+                                            placeholder="Phone number"
                                         />
                                     </div>
                                     <div className="form-group">
@@ -1121,7 +1339,7 @@ export default function Bookings() {
                                             className="form-control"
                                             value={quickGuestForm.id_number}
                                             onChange={e => setQuickGuestForm({ ...quickGuestForm, id_number: e.target.value })}
-                                            placeholder="e.g. EP-998877"
+                                            placeholder="ID number"
                                         />
                                     </div>
                                 </div>

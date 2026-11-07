@@ -11,11 +11,14 @@ $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
 switch ($method) {
     case 'GET':
         $booking_id = $_GET['booking_id'] ?? null;
-        $query = "SELECT p.*, u.name as guest_name, u.email as guest_email, u.phone as guest_phone, r.room_number, r.id as room_id, b.total_amount
+        $query = "SELECT p.*, u.name as guest_name, u.email as guest_email, u.phone as guest_phone,
+                  COALESCE(r.room_number, 'Dining Only') as room_number, r.id as room_id, b.total_amount,
+                  b.receptionist_id, staff.name as staff_name, staff.role as staff_role
                   FROM payments p
                   JOIN bookings b ON p.booking_id = b.id
                   JOIN users u ON b.customer_id = u.id
-                  JOIN rooms r ON b.room_id = r.id";
+                  LEFT JOIN rooms r ON b.room_id = r.id
+                  LEFT JOIN users staff ON b.receptionist_id = staff.id";
 
         // Admin Real-Time Mobile Banking alerts endpoint (Admin only)
         if (isset($_GET['recent_for_admin'])) {

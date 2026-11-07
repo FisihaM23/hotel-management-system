@@ -170,16 +170,24 @@ export default function Dining() {
     const handlePlaceOrder = async (e) => {
         e.preventDefault()
         if (cart.length === 0) return toast.error('Your order cart is empty')
+        
+        const isDiningOnly = orderForm.delivery_type !== 'room_service' || !orderForm.room_number
+
         if (orderForm.delivery_type === 'room_service' && !orderForm.room_number) {
             return toast.error('Please specify your Room Number for room service')
+        }
+
+        // Rule: Due is not permitted for dining-only customers without a room - full payment is mandatory
+        if (isDiningOnly && orderForm.payment_status !== 'paid') {
+            return toast.error('Due is not permitted for dining-only orders without a room. Full payment is mandatory.')
         }
 
         setSubmittingOrder(true)
         try {
             const payload = {
-                room_number: orderForm.room_number,
+                room_number: isDiningOnly ? (orderForm.room_number || 'Dining Plaza') : orderForm.room_number,
                 delivery_type: orderForm.delivery_type,
-                payment_status: orderForm.payment_status,
+                payment_status: isDiningOnly ? 'paid' : orderForm.payment_status,
                 special_notes: orderForm.special_notes,
                 total_amount: cartTotal,
                 items: cart.map(c => ({
@@ -191,7 +199,7 @@ export default function Dining() {
                 }))
             }
             await createDiningOrder(payload)
-            toast.success('Your order has been placed successfully!')
+            toast.success('Your order has been placed and paid in full successfully!')
             setCart([])
             setCartDrawer(false)
             loadData()
@@ -821,7 +829,7 @@ export default function Dining() {
                                                 <label className="form-label">Room Number *</label>
                                                 <input
                                                     className="form-control"
-                                                    placeholder="e.g. 101, 201, 301"
+                                                    placeholder="Room number"
                                                     value={orderForm.room_number}
                                                     onChange={e => setOrderForm({ ...orderForm, room_number: e.target.value })}
                                                     required
@@ -830,16 +838,30 @@ export default function Dining() {
                                         )}
 
                                         <div className="form-group">
-                                            <label className="form-label">Payment Option</label>
+                                            <label className="form-label">
+                                                Payment Option {orderForm.delivery_type !== 'room_service' && <span style={{ color: '#059669', fontWeight: 700 }}>(Full Payment Mandatory)</span>}
+                                            </label>
                                             <select
                                                 className="form-control"
-                                                value={orderForm.payment_status}
+                                                value={orderForm.delivery_type !== 'room_service' ? 'paid' : orderForm.payment_status}
                                                 onChange={e => setOrderForm({ ...orderForm, payment_status: e.target.value })}
+                                                disabled={orderForm.delivery_type !== 'room_service'}
                                             >
-                                                <option value="charged_to_room">Charge to Room Bill</option>
-                                                <option value="paid">Pre-paid (Card / Cash)</option>
-                                                <option value="unpaid">Pay on Delivery</option>
+                                                {orderForm.delivery_type === 'room_service' ? (
+                                                    <>
+                                                        <option value="charged_to_room">Charge to Room Bill</option>
+                                                        <option value="paid">Pre-paid (Card / Cash)</option>
+                                                        <option value="unpaid">Pay on Delivery</option>
+                                                    </>
+                                                ) : (
+                                                    <option value="paid">✓ Full Payment (Pre-paid / Card / Mobile / Cash) — No Due Permitted</option>
+                                                )}
                                             </select>
+                                            {orderForm.delivery_type !== 'room_service' && (
+                                                <div style={{ fontSize: 11.5, color: '#059669', marginTop: 5, fontWeight: 600, lineHeight: 1.4 }}>
+                                                    🔒 Hotel Rule: Dining-only orders without a room do not permit balance dues. Full payment is mandatory upon order placement.
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="form-group">
@@ -847,7 +869,7 @@ export default function Dining() {
                                             <textarea
                                                 className="form-control"
                                                 rows={2}
-                                                placeholder="e.g. Extra ice, medium-rare steak, wine glasses..."
+                                                placeholder="Special instructions or preferences"
                                                 value={orderForm.special_notes}
                                                 onChange={e => setOrderForm({ ...orderForm, special_notes: e.target.value })}
                                             />
@@ -897,7 +919,7 @@ export default function Dining() {
                                             className="form-control"
                                             value={itemForm.name}
                                             onChange={e => setItemForm({ ...itemForm, name: e.target.value })}
-                                            placeholder="e.g. Grilled Ribeye, Moët Champagne"
+                                            placeholder="Item name"
                                             required
                                         />
                                     </div>
@@ -1004,7 +1026,7 @@ export default function Dining() {
                                                 className="form-control"
                                                 value={itemForm.alcohol_by_volume}
                                                 onChange={e => setItemForm({ ...itemForm, alcohol_by_volume: e.target.value })}
-                                                placeholder="e.g. 13.5% ABV, 40% ABV"
+                                                placeholder="Alcohol by volume (ABV)"
                                             />
                                         </div>
                                     )}
@@ -1014,7 +1036,7 @@ export default function Dining() {
                                             className="form-control"
                                             value={itemForm.preparation_time}
                                             onChange={e => setItemForm({ ...itemForm, preparation_time: e.target.value })}
-                                            placeholder="e.g. 15 mins, Instant"
+                                            placeholder="Preparation time"
                                         />
                                     </div>
                                     <div className="form-group">

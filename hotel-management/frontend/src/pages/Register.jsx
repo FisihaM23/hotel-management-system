@@ -13,6 +13,8 @@ export default function Register() {
     const [reqForm, setReqForm] = useState({ name: '', email: '', phone: '', role: 'customer', notes: '' })
     const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' })
     const [loading, setLoading] = useState(false)
+    const [focusedFields, setFocusedFields] = useState({})
+    const handleFocus = (field) => setFocusedFields(prev => ({ ...prev, [field]: true }))
     const navigate = useNavigate()
     const { loginUser } = useAuth()
 
@@ -62,17 +64,25 @@ export default function Register() {
                 } else {
                     toast.success('✉️ Welcome email sent to your inbox!')
                 }
-            } else {
-                toast.info('🎉 Welcome notification created in your guest portal!')
             }
-            // Auto-login newcomer customer directly to the landing page
+            // Direct seamless login using the token and user payload returned by the register endpoint
+            const sessionToken = regRes?.data?.token
+            const sessionUser = regRes?.data?.user
+            if (sessionToken && sessionUser) {
+                loginUser(sessionToken, sessionUser)
+                toast.success(`🎉 Welcome to Grand Hotel, ${sessionUser.name}! Enjoy your stay.`)
+                setTimeout(() => { window.location.href = '/' }, 500)
+                return
+            }
+
+            // Auto-login fallback if token was not in register response
             try {
                 const loginRes = await login({ email: form.email.trim(), password: form.password })
                 const { token, user } = loginRes.data
                 if (token && user) {
                     loginUser(token, user)
                     toast.success(`🎉 Welcome to Grand Hotel, ${user.name}! Enjoy your stay.`)
-                    setTimeout(() => { window.location.href = '/' }, 600)
+                    setTimeout(() => { window.location.href = '/' }, 500)
                     return
                 }
             } catch (loginErr) {
@@ -120,21 +130,17 @@ export default function Register() {
                     <p style={{ color: 'var(--tp-mute)', fontSize: 13 }}>Hotel Management System</p>
                 </div>
 
-                <div style={{
-                    background: 'var(--tp-surf-2)',
-                    border: '1px solid var(--tp-line)',
-                    borderRadius: 10,
-                    padding: '12px 14px',
-                    marginBottom: 16,
-                    fontSize: 12.5,
-                    color: 'var(--tp-ink)',
-                    lineHeight: 1.5
-                }}>
-                    <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: 'var(--tp-acc)' }}>
-                        <Shield size={16} /> Admin Account Creation Policy
-                    </div>
-                    All staff and customer accounts are created, provisioned, and managed by System Administrator <strong>Mulugeta Fisiha</strong> (<code>befather7@gmail.com</code>).
-                </div>
+                {/* Empty pure black (#000000) space replacing policy/demo banner */}
+                <div
+                    style={{
+                        width: '100%',
+                        height: 48,
+                        background: '#000000',
+                        borderRadius: 10,
+                        marginBottom: 16
+                    }}
+                    aria-hidden="true"
+                />
 
                 {/* Sub-modes: Request from Admin vs Self-Register Customer */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -169,25 +175,41 @@ export default function Register() {
                             </Link>
                         </div>
                     ) : (
-                        <form onSubmit={handleAccountRequest}>
+                        <form onSubmit={handleAccountRequest} autoComplete="off">
+                            {/* Chrome autofill suppression decoys */}
+                            <input
+                                type="text"
+                                name="fake_reg_user"
+                                tabIndex={-1}
+                                autoComplete="off"
+                                style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                                aria-hidden="true"
+                            />
                             <div className="form-group">
                                 <label className="form-label">Full Name *</label>
                                 <input
                                     className="form-control"
+                                    name="hms_reg_pg_name"
+                                    autoComplete="off"
                                     value={reqForm.name}
                                     onChange={e => setReqForm({ ...reqForm, name: e.target.value })}
-                                    placeholder="e.g. Abebe Bikila"
+                                    placeholder="Full name"
                                     required
                                 />
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Email Address * <span style={{ fontSize: 11, color: 'var(--tp-acc)', fontWeight: 600 }}>(Must be @gmail.com or @icloud.com)</span></label>
+                                <label className="form-label">Email Address *</label>
                                 <input
                                     className="form-control"
                                     type="email"
+                                    name="hms_reg_pg_email"
+                                    id="hms_reg_pg_email"
+                                    autoComplete="off"
+                                    readOnly={!focusedFields.reqEmail}
+                                    onFocus={() => handleFocus('reqEmail')}
                                     value={reqForm.email}
                                     onChange={e => setReqForm({ ...reqForm, email: e.target.value })}
-                                    placeholder="yourname@gmail.com or user@icloud.com"
+                                    placeholder="Email address"
                                     required
                                 />
                             </div>
@@ -196,9 +218,11 @@ export default function Register() {
                                     <label className="form-label">Phone</label>
                                     <input
                                         className="form-control"
+                                        name="hms_reg_pg_phone"
+                                        autoComplete="off"
                                         value={reqForm.phone}
                                         onChange={e => setReqForm({ ...reqForm, phone: e.target.value })}
-                                        placeholder="+251 932 338 138"
+                                        placeholder="Phone number"
                                     />
                                 </div>
                                 <div className="form-group">
@@ -222,7 +246,7 @@ export default function Register() {
                                     className="form-control"
                                     value={reqForm.notes}
                                     onChange={e => setReqForm({ ...reqForm, notes: e.target.value })}
-                                    placeholder="e.g. Booking room 201 next week"
+                                    placeholder="Booking reference, notes, or department"
                                 />
                             </div>
                             <button
@@ -234,21 +258,77 @@ export default function Register() {
                                 <Send size={14} style={{ marginRight: 6 }} />
                                 {loading ? 'Submitting...' : 'Submit Request to Administrator'}
                             </button>
+
+                            {/* Empty pure black (#000000) credentials display space */}
+                            <div
+                                style={{
+                                    width: '100%',
+                                    height: 40,
+                                    background: '#000000',
+                                    borderRadius: 8,
+                                    marginTop: 16
+                                }}
+                                aria-hidden="true"
+                            />
                         </form>
                     )
                 ) : (
-                    <form onSubmit={handleSubmit}>
+                    <form onSubmit={handleSubmit} autoComplete="off">
+                        {/* Chrome autofill suppression decoys */}
+                        <input
+                            type="text"
+                            name="fake_page_reg_user"
+                            tabIndex={-1}
+                            autoComplete="username"
+                            style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                            aria-hidden="true"
+                        />
+                        <input
+                            type="password"
+                            name="fake_page_reg_pass"
+                            tabIndex={-1}
+                            autoComplete="current-password"
+                            style={{ position: 'fixed', top: '-9999px', left: '-9999px', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
+                            aria-hidden="true"
+                        />
                         <div className="form-group">
                             <label className="form-label">Full Name *</label>
-                            <input className="form-control" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+                            <input
+                                className="form-control"
+                                name="hms_pg_reg_name"
+                                autoComplete="off"
+                                value={form.name}
+                                onChange={e => setForm({ ...form, name: e.target.value })}
+                                placeholder="Full name"
+                                required
+                            />
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Email Address * <span style={{ fontSize: 11, color: 'var(--tp-acc)', fontWeight: 600 }}>(Must be @gmail.com or @icloud.com)</span></label>
-                            <input className="form-control" type="email" placeholder="yourname@gmail.com or user@icloud.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} required />
+                            <label className="form-label">Email Address *</label>
+                            <input
+                                className="form-control"
+                                type="email"
+                                name="hms_pg_reg_email"
+                                id="hms_pg_reg_email"
+                                autoComplete="off"
+                                readOnly={!focusedFields.regEmail}
+                                onFocus={() => handleFocus('regEmail')}
+                                placeholder="Email address"
+                                value={form.email}
+                                onChange={e => setForm({ ...form, email: e.target.value })}
+                                required
+                            />
                         </div>
                         <div className="form-group">
                             <label className="form-label">Phone</label>
-                            <input className="form-control" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                            <input
+                                className="form-control"
+                                name="hms_pg_reg_phone"
+                                autoComplete="off"
+                                value={form.phone}
+                                onChange={e => setForm({ ...form, phone: e.target.value })}
+                                placeholder="Phone number"
+                            />
                         </div>
                         <div className="form-row">
                             <div className="form-group">
@@ -256,9 +336,14 @@ export default function Register() {
                                 <input
                                     className="form-control"
                                     type="password"
+                                    name="hms_pg_reg_password"
+                                    id="hms_pg_reg_password"
+                                    autoComplete="new-password"
+                                    readOnly={!focusedFields.regPass}
+                                    onFocus={() => handleFocus('regPass')}
                                     value={form.password}
                                     onChange={e => setForm({ ...form, password: e.target.value })}
-                                    placeholder="Min 8 chars"
+                                    placeholder="Password"
                                     required
                                 />
                                 {form.password && (
@@ -278,8 +363,14 @@ export default function Register() {
                                 <input
                                     className="form-control"
                                     type="password"
+                                    name="hms_pg_reg_confirm"
+                                    id="hms_pg_reg_confirm"
+                                    autoComplete="new-password"
+                                    readOnly={!focusedFields.regConf}
+                                    onFocus={() => handleFocus('regConf')}
                                     value={form.confirm}
                                     onChange={e => setForm({ ...form, confirm: e.target.value })}
+                                    placeholder="Confirm password"
                                     required
                                 />
                             </div>
@@ -287,6 +378,18 @@ export default function Register() {
                         <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: 11, fontWeight: 700 }} disabled={loading}>
                             {loading ? 'Registering...' : 'Create Guest Account'}
                         </button>
+
+                        {/* Empty pure black (#000000) credentials display space */}
+                        <div
+                            style={{
+                                width: '100%',
+                                height: 40,
+                                background: '#000000',
+                                borderRadius: 8,
+                                marginTop: 16
+                            }}
+                            aria-hidden="true"
+                        />
                     </form>
                 )}
 

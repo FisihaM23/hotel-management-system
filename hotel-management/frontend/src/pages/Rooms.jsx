@@ -193,7 +193,7 @@ export default function Rooms() {
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Amenities</label>
-                                    <input className="form-control" placeholder="WiFi,TV,AC,Mini-bar" value={form.amenities} onChange={e => setForm({ ...form, amenities: e.target.value })} />
+                                    <input className="form-control" placeholder="Amenities" value={form.amenities} onChange={e => setForm({ ...form, amenities: e.target.value })} />
                                 </div>
                                 <div className="form-group">
                                     <label className="form-label">Description</label>

@@ -210,7 +210,22 @@ if ($action === 'register') {
                 : 'Account registered successfully! A welcome email has been sent to your email address.';
         }
 
+        // Create user session payload & token for seamless immediate authentication
+        $userRecord = [
+            'id' => $newId,
+            'name' => $regName,
+            'email' => $regEmail,
+            'role' => $role,
+            'phone' => $phone,
+            'status' => 'active',
+            'created_at' => date('Y-m-d H:i:s')
+        ];
+        $authToken = makeAuthToken($userRecord);
+
         json_ok([
+            'status' => 'success',
+            'token' => $authToken,
+            'user' => $userRecord,
             'message' => $respMsg,
             'email_sent' => !empty($emailRes['success']),
             'email_id' => $emailRes['id'] ?? null,

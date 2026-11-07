@@ -6,7 +6,7 @@ const BASE = 'http://localhost/hotel-management/api'
 const api = axios.create({
     baseURL: BASE,
     headers: { 'Content-Type': 'application/json' },
-    timeout: 10000
+    timeout: 30000
 })
 
 // Attach token safely

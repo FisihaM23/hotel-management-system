@@ -45,11 +45,13 @@ function isValidUserEmail($email) {
     $email = trim($email);
     if (empty($email)) return false;
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return false;
-    return (bool) preg_match('/^[a-zA-Z0-9.!#$%&\'*+\/=?^_`{|}~-]+@(gmail\.com|icloud\.com|hotel\.com)$/i', $email);
+    // Must contain letters before @ (only numbers before @ is invalid)
+    // Must end with @gmail.com or @icloud.com (or @hotel.com)
+    return (bool) preg_match('/^(?=[^@]*[a-zA-Z])[a-zA-Z0-9._%+-]+@(gmail\.com|icloud\.com|hotel\.com)$/i', $email);
 }
 
 function emailPolicyMessage() {
-    return 'Email address must be valid and end with @gmail.com or @icloud.com (e.g. name@gmail.com)';
+    return 'Email must contain letters (words or word with numbers) and end with @gmail.com or @icloud.com (only numbers before @ is invalid, e.g. name@gmail.com)';
 }
 
 function makeAuthToken($user) {

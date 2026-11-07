@@ -228,18 +228,18 @@ export default function Guests() {
                                             className="form-control"
                                             value={form.name}
                                             onChange={e => setForm({ ...form, name: e.target.value })}
-                                            placeholder="e.g. John Doe"
+                                            placeholder="Full name"
                                             required
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label className="form-label">Email Address * <span style={{ fontSize: 11, color: '#3b82f6', fontWeight: 500 }}>(Must be @gmail.com or @icloud.com)</span></label>
+                                        <label className="form-label">Email Address *</label>
                                         <input
                                             className="form-control"
                                             type="email"
                                             value={form.email}
                                             onChange={e => setForm({ ...form, email: e.target.value })}
-                                            placeholder="guest@gmail.com or guest@icloud.com"
+                                            placeholder="Email address"
                                             required
                                         />
                                     </div>
@@ -252,7 +252,7 @@ export default function Guests() {
                                             className="form-control"
                                             value={form.phone}
                                             onChange={e => setForm({ ...form, phone: e.target.value })}
-                                            placeholder="+251 91 123 4567"
+                                            placeholder="Phone number"
                                         />
                                     </div>
                                     <div className="form-group">
@@ -298,7 +298,7 @@ export default function Guests() {
                                             className="form-control"
                                             value={form.id_number}
                                             onChange={e => setForm({ ...form, id_number: e.target.value })}
-                                            placeholder="e.g. EP-1234567 or NID-8849"
+                                            placeholder="ID number"
                                         />
                                     </div>
                                 </div>
@@ -310,7 +310,7 @@ export default function Guests() {
                                         rows={2}
                                         value={form.address}
                                         onChange={e => setForm({ ...form, address: e.target.value })}
-                                        placeholder="City, Country or permanent residential address"
+                                        placeholder="Address"
                                     />
                                 </div>
                             </div>

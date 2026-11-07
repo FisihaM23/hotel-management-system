@@ -11,6 +11,8 @@ const emptyForm = { booking_id: '', amount: '', method: 'telebirr', status: 'com
 export default function Payments() {
     const { user } = useAuth()
     const isAdmin = user && user.role === 'admin'
+    const isManager = user && user.role === 'manager'
+    const isReceptionist = user && (user.role === 'receptionist' || (!isAdmin && !isManager))
     const [payments, setPayments] = useState([])
     const [bookings, setBookings] = useState([])
     const [loading, setLoading] = useState(true)
@@ -73,7 +75,26 @@ export default function Payments() {
         finally { setSaving(false) }
     }
 
-    const total = payments.filter(p => p.status === 'completed').reduce((s, p) => s + Number(p.amount), 0)
+    // Total completed income across all channels for Admin
+    const totalAdminIncome = payments.filter(p => p.status === 'completed').reduce((s, p) => s + Number(p.amount), 0)
+
+    // Manager Desk Income (payments for bookings registered by manager)
+    const managerIncome = payments.filter(p => p.status === 'completed' && (
+        p.staff_role === 'manager' ||
+        (isManager && Number(p.receptionist_id) === Number(user?.id))
+    )).reduce((s, p) => s + Number(p.amount), 0)
+
+    // Reception Desk Income (payments for bookings registered by receptionist)
+    const receptionIncome = payments.filter(p => p.status === 'completed' && (
+        p.staff_role === 'receptionist' ||
+        (isReceptionist && Number(p.receptionist_id) === Number(user?.id))
+    )).reduce((s, p) => s + Number(p.amount), 0)
+
+    // Displayed Income according to user role
+    const displayedIncome = isAdmin ? totalAdminIncome : (isManager ? managerIncome : receptionIncome)
+    const incomeLabel = isAdmin
+        ? 'Total Admin Balance Collected'
+        : (isManager ? 'Manager Desk Income Collected' : 'Reception Desk Income Collected')
 
     const filteredPayments = payments.filter(p => {
         const matchSearch = !search ||
@@ -116,12 +137,18 @@ export default function Payments() {
             </div>
 
             <div className="stats-grid" style={{ marginBottom: 24 }}>
-                {isAdmin && (
-                    <div className="stat-card">
-                        <div className="stat-icon" style={{ background: '#d1fae5' }}><CreditCard color="#059669" /></div>
-                        <div className="stat-info"><h3>ETB {total.toFixed(2)}</h3><p>Total Admin Balance Collected</p></div>
+                <div className="stat-card">
+                    <div className="stat-icon" style={{ background: '#d1fae5' }}><CreditCard color="#059669" /></div>
+                    <div className="stat-info">
+                        <h3>ETB {displayedIncome.toFixed(2)}</h3>
+                        <p>{incomeLabel}</p>
+                        {isAdmin && (
+                            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                                Total All Hotel Channels & Online
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
                 <div className="stat-card">
                     <div className="stat-icon" style={{ background: '#dbeafe' }}><CreditCard color="#1d4ed8" /></div>
                     <div className="stat-info"><h3>{payments.filter(p => p.status === 'completed').length}</h3><p>Completed Settlements</p></div>
@@ -162,10 +189,10 @@ export default function Payments() {
                 {loading ? <div className="loading"><div className="spinner" />Loading payments...</div> : (
                     <div className="table-container">
                         <table>
-                            <thead><tr><th>#</th><th>Booking</th><th>Guest</th><th>Amount</th><th>Payment Method</th><th>Transaction ID</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>#</th><th>Booking</th><th>Guest</th><th>Amount</th><th>Payment Method</th><th>Transaction ID</th><th>Staff Channel</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
                             <tbody>
                                 {filteredPayments.length === 0
-                                    ? <tr><td colSpan={9} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>No payments found matching criteria</td></tr>
+                                    ? <tr><td colSpan={10} style={{ textAlign: 'center', color: '#9ca3af', padding: 32 }}>No payments found matching criteria</td></tr>
                                     : filteredPayments.map(p => (
                                         <tr key={p.id}>
                                             <td>#{p.id}</td>
@@ -177,6 +204,28 @@ export default function Payments() {
                                             <td style={{ fontWeight: 600 }}>ETB {Number(p.amount).toFixed(2)}</td>
                                             <td>{renderMethodBadge(p.method)}</td>
                                             <td style={{ fontSize: 12, color: '#4b5563', fontFamily: 'monospace' }}>{p.transaction_id || '-'}</td>
+                                            <td>
+                                                {p.staff_role ? (
+                                                    <span style={{
+                                                        fontSize: 11.5,
+                                                        fontWeight: 600,
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        gap: 4,
+                                                        padding: '2px 8px',
+                                                        borderRadius: 6,
+                                                        background: p.staff_role === 'manager' ? '#f3e8ff' : (p.staff_role === 'admin' ? '#fee2e2' : '#eff6ff'),
+                                                        color: p.staff_role === 'manager' ? '#6b21a8' : (p.staff_role === 'admin' ? '#991b1b' : '#1e40af')
+                                                    }}>
+                                                        <span>{p.staff_role === 'manager' ? '👔' : (p.staff_role === 'admin' ? '👑' : '🛎️')}</span>
+                                                        <span>{p.staff_role.toUpperCase()}: {p.staff_name || 'Staff'}</span>
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ fontSize: 11.5, color: '#6b7280', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                                        <span>🌐</span> Online Self-Book
+                                                    </span>
+                                                )}
+                                            </td>
                                             <td><span className={`badge ${statusBadge[p.status]}`} style={{ textTransform: 'capitalize' }}>{p.status}</span></td>
                                             <td style={{ fontSize: 12 }}>{p.paid_at ? new Date(p.paid_at).toLocaleDateString() : '-'}</td>
                                             <td>
@@ -281,7 +330,7 @@ export default function Payments() {
                                             className="form-control"
                                             value={form.transaction_id}
                                             onChange={e => setForm({ ...form, transaction_id: e.target.value })}
-                                            placeholder="e.g. Telebirr Txn # / CBE Ref"
+                                            placeholder="Transaction or reference #"
                                         />
                                     </div>
                                 </div>
@@ -355,7 +404,7 @@ export default function Payments() {
                                     step="0.01"
                                     value={chapaAmount}
                                     onChange={e => setChapaAmount(e.target.value)}
-                                    placeholder="e.g. 1500.00"
+                                    placeholder="Amount"
                                     required
                                 />
                             </div>
