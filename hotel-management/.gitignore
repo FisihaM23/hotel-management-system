@@ -33,3 +33,7 @@ Thumbs.db
 .idea/
 *.suo
 *.user
+
+# ── Database Dumps & Backups ──────────────────────────────────────────────
+*.sql
+*.bak

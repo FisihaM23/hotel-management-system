@@ -41,7 +41,11 @@ if ($action === 'resend' || $action === 'resend_otp') {
     require __DIR__ . '/resend_otp.php';
     exit;
 }
-if ($action === 'reset' && !empty(json_decode(file_get_contents('php://input'), true)['reset_token'])) {
+if ($action === 'reset') {
+    require __DIR__ . '/reset_password.php';
+    exit;
+}
+if ($action === 'verify' || $action === 'verify_token') {
     require __DIR__ . '/reset_password.php';
     exit;
 }
@@ -136,8 +140,8 @@ if ($method === 'POST' && $action === 'request') {
 // ── STEP 2: Verify token (GET ?action=verify&token=xxx) ─────────────────────
 if ($method === 'GET' && $action === 'verify') {
     $token = $_GET['token'] ?? '';
-    $stmt  = $conn->prepare("SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > NOW()");
-    $stmt->bind_param("s", $token);
+    $tokenHash = hash('sha256', $token); $stmt  = $conn->prepare("SELECT * FROM password_resets WHERE (token = ? OR reset_token_hash = ?) AND purpose = 'forgot_password' AND is_verified = 1 AND used = 0 AND (token_expires_at > NOW() OR (token_expires_at IS NULL AND expires_at > NOW()))"); $stmt->bind_param("ss", $token, $tokenHash); // replaced
+
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
 
@@ -166,7 +170,7 @@ if ($method === 'POST' && $action === 'reset') {
     }
 
     $stmt = $conn->prepare("SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > NOW()");
-    $stmt->bind_param("s", $token);
+
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
 

@@ -98,6 +98,7 @@ export default function ResetPassword() {
       try {
         sessionStorage.removeItem('hms_reset_token')
         sessionStorage.removeItem('hms_reset_email')
+        sessionStorage.removeItem('hms_dev_otp')
       } catch (_) {}
 
       setStatus('done')

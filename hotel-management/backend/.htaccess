@@ -1,0 +1,15 @@
+# Apache Security Rules - Hotel Management System Backend
+# Block direct access to environment variables, credentials, databases, git and backup files
+<FilesMatch "^\.env|(\.env.*|\.sql|\.log|\.git.*|composer\..*|package\..*|\.bak)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Disable Directory Browsing
+Options -Indexes
+

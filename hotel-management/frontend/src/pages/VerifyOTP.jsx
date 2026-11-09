@@ -183,7 +183,7 @@ export default function VerifyOTP() {
     setErrorMsg('')
     try {
       const res = await resendPasswordOtp({ email })
-      toast.success(res.data?.message || 'New verification code dispatched!')
+      toast.success(res.data?.message || 'New verification code dispatched to your email!')
       setOtpDigits(['', '', '', '', '', ''])
       setTimeLeft(300) // Reset 5-minute countdown
       setResendCooldown(60) // Reset 60-second cooldown

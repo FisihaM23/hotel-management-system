@@ -25,17 +25,55 @@ function hashResetToken(string $token): string {
 }
 
 /**
- * Safely get client IP address
+ * Safely get client IP address with proxy verification and IP validation
  */
 function getClientIp(): string {
-    if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
-        return $_SERVER['HTTP_CF_CONNECTING_IP'];
+    $remoteAddr = trim($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
+    if (!filter_var($remoteAddr, FILTER_VALIDATE_IP)) {
+        $remoteAddr = '127.0.0.1';
     }
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        return trim($ips[0]);
+
+    // Explicitly trusted proxy IPs (can be extended via TRUSTED_PROXIES env var)
+    $trustedProxies = ['127.0.0.1', '::1'];
+    $envProxies = getenv('TRUSTED_PROXIES') ?: ($_ENV['TRUSTED_PROXIES'] ?? '');
+    if (!empty($envProxies)) {
+        $extra = array_map('trim', explode(',', $envProxies));
+        $trustedProxies = array_merge($trustedProxies, $extra);
     }
-    return $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+
+    $isTrustedProxy = in_array($remoteAddr, $trustedProxies, true);
+
+    if ($isTrustedProxy) {
+        // 1. Cloudflare connecting IP
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+            $cfIp = trim($_SERVER['HTTP_CF_CONNECTING_IP']);
+            if (filter_var($cfIp, FILTER_VALIDATE_IP)) {
+                return $cfIp;
+            }
+        }
+
+        // 2. X-Forwarded-For header (leftmost entry is the initial client)
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+            $clientIp = trim($ips[0]);
+            if (filter_var($clientIp, FILTER_VALIDATE_IP)) {
+                return $clientIp;
+            }
+        }
+    }
+
+    return $remoteAddr;
+}
+
+/**
+ * Maintenance data hygiene: Purge expired and used records older than 14 days
+ */
+function cleanupExpiredPasswordResets(mysqli $conn): int {
+    $stmt = $conn->prepare("DELETE FROM password_resets WHERE (used = 1 OR expires_at < NOW()) AND created_at < DATE_SUB(NOW(), INTERVAL 14 DAY)");
+    if ($stmt && $stmt->execute()) {
+        return $stmt->affected_rows;
+    }
+    return 0;
 }
 
 /**
@@ -50,12 +88,21 @@ function isIpRateLimited(mysqli $conn, string $ip): bool {
 }
 
 /**
- * Send branded 6-Digit Email OTP
+ * Send branded 6-Digit Email OTP supporting both forgot_password and change_password
  */
-function sendOtpEmail(string $toEmail, string $userName, string $otp): bool {
-    $subject = "Your Hotel Management System Password Reset Code";
+function sendOtpEmail(string $toEmail, string $userName, string $otp, string $purpose = 'forgot_password'): bool {
+    $isChangePassword = ($purpose === 'change_password');
+    $subject = $isChangePassword
+        ? "Your Hotel Management System Password Change Verification Code"
+        : "Your Hotel Management System Password Reset Code";
     $formattedOtp = substr($otp, 0, 3) . ' ' . substr($otp, 3, 3);
-    $displayName = !empty($userName) ? htmlspecialchars($userName) : 'Valued Guest';
+    $displayName = !empty($userName) ? htmlspecialchars($userName) : 'Valued User';
+
+    $actionHeading = $isChangePassword ? "Password Change Verification" : "Password Reset Verification";
+    $expiryMinutes = $isChangePassword ? 10 : 5;
+    $actionIntro = $isChangePassword
+        ? "We received a request to change the password on your authenticated account. Use the 6-digit verification code below to authorize your password change:"
+        : "We received a request to reset the password for your Hotel Management System account. Use the 6-digit verification code below to authorize the password reset:";
 
     $html = <<<HTML
 <!DOCTYPE html>
@@ -76,10 +123,10 @@ function sendOtpEmail(string $toEmail, string $userName, string $otp): bool {
 
     <!-- Main Content -->
     <div style="padding:32px 28px;">
-      <h2 style="color:#ffffff; font-size:18px; margin-top:0; font-weight:700;">Password Reset Verification</h2>
+      <h2 style="color:#ffffff; font-size:18px; margin-top:0; font-weight:700;">{$actionHeading}</h2>
       <p style="color:#cbd5e1; font-size:14px; line-height:1.6; margin-bottom:20px;">
         Hello <strong>{$displayName}</strong>,<br>
-        We received a request to reset the password for your Hotel Management System account. Use the 6-digit verification code below to authorize the password reset:
+        {$actionIntro}
       </p>
 
       <!-- OTP Display Box -->
@@ -88,7 +135,7 @@ function sendOtpEmail(string $toEmail, string $userName, string $otp): bool {
         <div style="font-family:Courier, monospace, sans-serif; font-size:36px; font-weight:800; letter-spacing:8px; color:#d4af37; text-shadow:0 0 12px rgba(212,175,55,0.4);">
           {$formattedOtp}
         </div>
-        <span style="display:inline-block; margin-top:8px; font-size:12px; color:#ef4444; font-weight:600;">⏱️ Valid for 5 minutes only</span>
+        <span style="display:inline-block; margin-top:8px; font-size:12px; color:#ef4444; font-weight:600;">⏱️ Valid for {$expiryMinutes} minutes only</span>
       </div>
 
       <!-- Security Notice -->
@@ -113,8 +160,8 @@ function sendOtpEmail(string $toEmail, string $userName, string $otp): bool {
 </html>
 HTML;
 
-    $text = "Your Grand Hotel Password Reset Code is: {$otp}\n\n"
-          . "This code expires in 5 minutes.\n"
+    $text = "Your Grand Hotel {$actionHeading} Code is: {$otp}\n\n"
+          . "This code expires in {$expiryMinutes} minutes.\n"
           . "Security Warning: Never share this code with anyone.\n"
           . "If you did not request this, please ignore this message.\n\n"
           . "Grand Escape Hotel & Resort";
@@ -128,7 +175,12 @@ HTML;
         }
     }
 
-    // 2. Fallback to direct SMTP / PHP mail
+    // 2. Direct Gmail SSL SMTP engine with full branded HTML
+    if (function_exists('sendSmtpEmailFallback') && sendSmtpEmailFallback($toEmail, $displayName, $subject, $html, $text)) {
+        return true;
+    }
+
+    // 3. Fallback to direct SMTP / PHP mail
     return sendEmailAlert($toEmail, $displayName, $subject, $text);
 }
 
@@ -177,6 +229,9 @@ HTML;
     if (!empty(getResendApiKey())) {
         $resResult = sendResendEmail($toEmail, $subject, $html, $text);
         if (!empty($resResult['success'])) return true;
+    }
+    if (function_exists('sendSmtpEmailFallback') && sendSmtpEmailFallback($toEmail, $displayName, $subject, $html, $text)) {
+        return true;
     }
     return sendEmailAlert($toEmail, $displayName, $subject, $text);
 }

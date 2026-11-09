@@ -24,6 +24,13 @@ if (!function_exists('loadEnvFile')) {
                     foreach ($lines as $line) {
                         $line = trim($line);
                         if (empty($line) || str_starts_with($line, '#')) continue;
+                        if (str_starts_with($line, 're_')) {
+                            $val = trim($line, "\"'");
+                            putenv("Resend_API_KEY={$val}");
+                            $_ENV['Resend_API_KEY'] = $val;
+                            $_SERVER['Resend_API_KEY'] = $val;
+                            continue;
+                        }
                         $parts = explode('=', $line, 2);
                         if (count($parts) === 2) {
                             $key = trim($parts[0]);
@@ -115,8 +122,8 @@ function sendResendEmail($to, $subject, $htmlContent, $textContent = '') {
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($payload),
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 4,
-        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_TIMEOUT => 12,
+        CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_SSL_VERIFYHOST => 0,
         CURLOPT_HTTPHEADER => [

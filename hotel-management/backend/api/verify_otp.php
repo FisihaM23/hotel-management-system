@@ -23,8 +23,8 @@ if (!preg_match('/^\d{6}$/', $otp)) {
     json_fail(400, 'Verification code must be exactly 6 digits');
 }
 
-// Find latest active, unverified, unused reset record for this email
-$stmt = $conn->prepare("SELECT * FROM password_resets WHERE email = ? AND is_verified = 0 AND used = 0 ORDER BY id DESC LIMIT 1");
+// Find latest active, unverified, unused reset record for this email and purpose = 'forgot_password'
+$stmt = $conn->prepare("SELECT * FROM password_resets WHERE email = ? AND purpose = 'forgot_password' AND is_verified = 0 AND used = 0 ORDER BY id DESC LIMIT 1");
 $stmt->bind_param("s", $email);
 $stmt->execute();
 $record = $stmt->get_result()->fetch_assoc();

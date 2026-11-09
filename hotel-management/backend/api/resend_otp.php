@@ -40,8 +40,8 @@ if (!$user) {
     exit;
 }
 
-// Check 60-second cooldown
-$cdStmt = $conn->prepare("SELECT (UNIX_TIMESTAMP(NOW()) - UNIX_TIMESTAMP(last_resend_at)) AS elapsed FROM password_resets WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+// Check 60-second cooldown for forgot_password
+$cdStmt = $conn->prepare("SELECT (UNIX_TIMESTAMP(NOW()) - UNIX_TIMESTAMP(last_resend_at)) AS elapsed FROM password_resets WHERE user_id = ? AND purpose = 'forgot_password' ORDER BY id DESC LIMIT 1");
 $cdStmt->bind_param("i", $user['id']);
 $cdStmt->execute();
 $cdRow = $cdStmt->get_result()->fetch_assoc();
@@ -51,24 +51,44 @@ if ($cdRow && $cdRow['elapsed'] !== null && (int)$cdRow['elapsed'] < 60) {
     json_fail(429, "Please wait {$wait} seconds before requesting a new verification code.");
 }
 
-// Invalidate previous OTPs
-$inval = $conn->prepare("UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0");
-$inval->bind_param("i", $user['id']);
-$inval->execute();
-
 // Generate new 6-digit OTP
 $otp = generateSecureOtp();
 $otpHash = password_hash($otp, PASSWORD_DEFAULT);
 
-// Store in database
-$ins = $conn->prepare("INSERT INTO password_resets 
-    (user_id, email, otp_hash, expires_at, failed_attempts, is_verified, used, ip_address, last_resend_at) 
-    VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0, 0, 0, ?, NOW())");
-$ins->bind_param("isss", $user['id'], $email, $otpHash, $clientIp);
-$ins->execute();
+// Send email FIRST to ensure safe delivery
+$emailDispatched = sendOtpEmail($email, $user['name'], $otp, 'forgot_password');
 
-// Send email
-sendOtpEmail($email, $user['name'], $otp);
+if (!$emailDispatched) {
+    json_fail(503, 'Unable to dispatch verification code email at this time. Please check your notification configuration or try again shortly.');
+}
 
-json_ok($genericResponse);
+// Email delivery confirmed: atomically invalidate old OTPs and insert new record
+$conn->begin_transaction();
+try {
+    // Invalidate previous unverified OTPs for forgot_password
+    $inval = $conn->prepare("UPDATE password_resets SET used = 1 WHERE user_id = ? AND purpose = 'forgot_password' AND used = 0");
+    if (!$inval) throw new RuntimeException($conn->error);
+    $inval->bind_param("i", $user['id']);
+    if (!$inval->execute()) throw new RuntimeException($inval->error ?: 'Failed to invalidate old OTP records');
+
+    // Store in database with 5-minute expiry and purpose = 'forgot_password'
+    $ins = $conn->prepare("INSERT INTO password_resets 
+        (user_id, email, purpose, otp_hash, expires_at, failed_attempts, is_verified, used, ip_address, last_resend_at) 
+        VALUES (?, ?, 'forgot_password', ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0, 0, 0, ?, NOW())");
+    if (!$ins) throw new RuntimeException($conn->error);
+    $ins->bind_param("isss", $user['id'], $email, $otpHash, $clientIp);
+    if (!$ins->execute()) throw new RuntimeException($ins->error ?: 'Failed to insert new OTP record');
+
+    $conn->commit();
+} catch (Throwable $e) {
+    $conn->rollback();
+    error_log("[Resend OTP] Transaction failed: " . $e->getMessage());
+    json_fail(500, 'Database error while saving verification record.');
+}
+
+json_ok([
+    'status' => 'success',
+    'message' => 'A new 6-digit verification code has been dispatched to your email address.',
+    'email_sent' => true
+]);
 

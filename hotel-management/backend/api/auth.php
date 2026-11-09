@@ -76,75 +76,16 @@ if ($action === 'resend_otp') {
     exit;
 }
 
-// ── 3. VERIFY TOKEN (LEGACY COMPATIBILITY) ──────────────────────────────────
+// ── 3. VERIFY TOKEN ─────────────────────────────────────────────────────────
 if ($action === 'verify_token') {
-    $token = $_GET['token'] ?? ($data['token'] ?? '');
-    if (empty($token)) {
-        json_fail(400, 'Reset token is required');
-    }
-    $tokenHash = hashResetToken($token);
-    $stmt = $conn->prepare("SELECT email FROM password_resets WHERE (token = ? OR reset_token_hash = ?) AND used = 0 AND (expires_at > NOW() OR token_expires_at > NOW())");
-    $stmt->bind_param("ss", $token, $tokenHash);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-
-    if (!$row) {
-        json_fail(400, 'Invalid or expired password reset link');
-    } else {
-        json_ok(['valid' => true, 'email' => $row['email']]);
-    }
+    require __DIR__ . '/reset_password.php';
+    exit;
 }
 
-// ── 4. RESET PASSWORD (SUPPORTS BOTH OTP RESET TOKEN & LEGACY) ──────────────
+// ── 4. RESET PASSWORD (SECURE OTP AUTHORIZATION) ───────────────────────────
 if ($action === 'reset_password') {
-    if (!empty($data['reset_token'])) {
-        require __DIR__ . '/reset_password.php';
-        exit;
-    }
-
-    $token = $data['token'] ?? '';
-    $password = $data['password'] ?? '';
-
-    if (empty($token) || empty($password)) {
-        json_fail(400, 'Token and new password are required');
-    }
-
-    if (!passwordMeetsPolicy($password)) {
-        json_fail(400, passwordPolicyMessage());
-    }
-
-    $stmt = $conn->prepare("SELECT email FROM password_resets WHERE token = ? AND used = 0 AND expires_at > NOW()");
-    $stmt->bind_param("s", $token);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-
-    if (!$row) {
-        json_fail(400, 'Invalid or expired password reset link');
-    }
-
-    // Update user's password with bcrypt hash
-    $hash = password_hash($password, PASSWORD_BCRYPT);
-    $upd = $conn->prepare("UPDATE users SET password = ? WHERE email = ?");
-    $upd->bind_param("ss", $hash, $row['email']);
-    $upd->execute();
-
-    // Mark all tokens for this email as used
-    $mark = $conn->prepare("UPDATE password_resets SET used = 1 WHERE email = ?");
-    $mark->bind_param("s", $row['email']);
-    $mark->execute();
-
-    // Notify user
-    $userStmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
-    $userStmt->bind_param("s", $row['email']);
-    $userStmt->execute();
-    $u = $userStmt->get_result()->fetch_assoc();
-    if ($u) {
-        $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Password Reset Successful', 'Your password was successfully updated.', 'success')");
-        $notif->bind_param("is", $u['id']);
-        $notif->execute();
-    }
-
-    json_ok(['status' => 'success', 'message' => 'Password reset successfully. You can now log in with your new password.']);
+    require __DIR__ . '/reset_password.php';
+    exit;
 }
 
 // ── 5. REGISTER (Customer self-onboarding or admin account request) ──────────

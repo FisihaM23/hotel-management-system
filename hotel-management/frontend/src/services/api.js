@@ -82,7 +82,7 @@ export const resetPasswordWithToken = d => api.post('/reset_password.php', d)
 
 // Backward-compatible legacy aliases
 export const forgotPassword = d => api.post('/forgot_password.php', d)
-export const verifyResetToken = token => api.get(`/reset_passwords.php?action=verify&token=${token}`)
+export const verifyResetToken = token => api.get(`/reset_password.php?token=${token}`)
 export const resetUserPassword = d => api.post('/reset_password.php', d)
 
 // Guests
@@ -149,6 +149,9 @@ export const markNotificationRead = id => api.put(`/notifications.php?id=${id}`)
 
 export const getMyProfile = () => api.get('/profile.php');
 export const updateMyProfile = data => api.put('/profile.php', data);
+export const requestChangePasswordOtp = () => api.post('/change_password.php?action=request_otp');
+export const verifyChangePasswordOtp = data => api.post('/change_password.php?action=verify_otp', data);
+export const changePasswordWithOtp = data => api.post('/change_password.php?action=change_password', data);
 
 // Dining & Bar
 export const getMenuItems = (params = {}) => {

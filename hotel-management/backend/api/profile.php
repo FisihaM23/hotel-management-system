@@ -37,12 +37,7 @@ switch ($method) {
             $values[] = $d['phone'];
         }
         if (!empty($d['password'])) {
-            if (!passwordMeetsPolicy($d['password'])) {
-                json_fail(400, passwordPolicyMessage());
-            }
-            $updates[] = 'password = ?';
-            $types .= 's';
-            $values[] = password_hash($d['password'], PASSWORD_BCRYPT);
+            json_fail(400, 'Direct password update is disabled. Please use the secure OTP-authenticated Change Password feature.');
         }
         if (empty($updates)) {
             json_fail(400, 'No valid fields to update');
