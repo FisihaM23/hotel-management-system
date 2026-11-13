@@ -1,5 +1,11 @@
 <?php
+require_once __DIR__ . '/../config/cors.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../config/auth_middleware.php';
+
+if (PHP_SAPI !== 'cli') {
+    authenticate(['admin']);
+}
 
 header('Content-Type: application/json; charset=utf-8');
 

@@ -2,9 +2,11 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth_middleware.php';
+require_once '../config/financial_service.php';
 
-authenticate(['admin', 'manager', 'receptionist', 'housekeeping', 'maintenance']);
+$authUser = authenticate(ROLE_GROUP_FRONT_DESK);
 $conn = getConnection();
+FinancialService::ensureSchema($conn);
 $method = $_SERVER['REQUEST_METHOD'];
 $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
 
@@ -48,7 +50,7 @@ switch ($method) {
     case 'POST':
         $d = json_decode(file_get_contents('php://input'), true) ?: [];
         $booking_id = (int) ($d['booking_id'] ?? 0);
-        $amount = (float) ($d['amount'] ?? 0);
+        $amount = round((float) ($d['amount'] ?? 0), 2);
         $methodPay = trim($d['method'] ?? 'telebirr');
         $status = trim($d['status'] ?? 'completed');
         $txn = trim($d['transaction_id'] ?? '');
@@ -57,52 +59,62 @@ switch ($method) {
         if (!$booking_id || $amount <= 0) {
             json_fail(400, 'Booking and a positive amount are required');
         }
-
-        $stmt = $conn->prepare("INSERT INTO payments (booking_id, amount, method, status, transaction_id, notes) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param('idssss', $booking_id, $amount, $methodPay, $status, $txn, $notes);
-        executeOrFail($stmt, $conn);
-        $newPayId = $conn->insert_id;
-
-        // If payment completed, send guest notification, dispatch Admin Mobile Banking Alert, and check invoice status
-        if ($status === 'completed') {
-            $bStmt = $conn->prepare("SELECT b.customer_id, b.total_amount, r.room_number, r.id as room_id, u.name as guest_name, u.phone as guest_phone, u.email as guest_email FROM bookings b JOIN rooms r ON b.room_id = r.id JOIN users u ON b.customer_id = u.id WHERE b.id = ?");
-            $bStmt->bind_param('i', $booking_id);
-            $bStmt->execute();
-            $bData = $bStmt->get_result()->fetch_assoc();
-            if ($bData) {
-                require_once '../config/notifications.php';
-                dispatchPaymentNotification($conn, [
-                    'booking_id' => $booking_id,
-                    'customer_id' => (int)$bData['customer_id'],
-                    'amount' => $amount,
-                    'method' => $methodPay,
-                    'transaction_id' => $txn,
-                    'room_number' => $bData['room_number'],
-                    'guest_name' => $bData['guest_name'],
-                    'guest_phone' => $bData['guest_phone'] ?? '',
-                    'guest_email' => $bData['guest_email'] ?? ''
-                ]);
-            }
-
-            // Update matching invoice to paid if balance is settled
-            $invStmt = $conn->prepare("SELECT id, total FROM invoices WHERE booking_id = ?");
-            $invStmt->bind_param('i', $booking_id);
-            $invStmt->execute();
-            $inv = $invStmt->get_result()->fetch_assoc();
-            if ($inv) {
-                $sumStmt = $conn->prepare("SELECT SUM(amount) as paid FROM payments WHERE booking_id = ? AND status = 'completed'");
-                $sumStmt->bind_param('i', $booking_id);
-                $sumStmt->execute();
-                $sumRes = $sumStmt->get_result()->fetch_assoc();
-                if ($sumRes && (float)$sumRes['paid'] >= (float)$inv['total']) {
-                    $updInv = $conn->prepare("UPDATE invoices SET status = 'paid' WHERE id = ?");
-                    $updInv->bind_param('i', $inv['id']);
-                    $updInv->execute();
-                }
-            }
+        if (!in_array($status, ['pending', 'completed', 'failed'], true)) {
+            json_fail(400, 'Invalid payment status');
         }
 
-        json_ok(['id' => $newPayId, 'message' => 'Payment recorded successfully']);
+        $conn->begin_transaction();
+        try {
+            $bChk = $conn->prepare("SELECT b.customer_id, b.total_amount, r.room_number, r.id as room_id, u.name as guest_name, u.phone as guest_phone, u.email as guest_email FROM bookings b LEFT JOIN rooms r ON b.room_id = r.id JOIN users u ON b.customer_id = u.id WHERE b.id = ? AND b.deleted_at IS NULL FOR UPDATE");
+            $bChk->bind_param('i', $booking_id);
+            $bChk->execute();
+            $bData = $bChk->get_result()->fetch_assoc();
+            $bChk->close();
+            if (!$bData) {
+                $conn->rollback();
+                json_fail(404, 'Booking not found');
+            }
+
+            $stmt = $conn->prepare("INSERT INTO payments (booking_id, amount, method, status, transaction_id, notes) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param('idssss', $booking_id, $amount, $methodPay, $status, $txn, $notes);
+            if (!$stmt->execute()) {
+                throw new RuntimeException($stmt->error ?: 'Failed to record payment');
+            }
+            $newPayId = (int) $conn->insert_id;
+            $stmt->close();
+
+            $invSync = null;
+            if ($status === 'completed') {
+                $invSync = FinancialService::syncInvoiceStatusFromPayments($conn, $booking_id);
+            }
+
+            $conn->commit();
+        } catch (\Throwable $e) {
+            $conn->rollback();
+            json_fail(500, 'Failed to record payment: ' . $e->getMessage());
+        }
+
+        if ($status === 'completed' && !empty($bData)) {
+            require_once '../config/notifications.php';
+            dispatchPaymentNotification($conn, [
+                'booking_id' => $booking_id,
+                'customer_id' => (int)$bData['customer_id'],
+                'amount' => $amount,
+                'method' => $methodPay,
+                'transaction_id' => $txn,
+                'room_number' => $bData['room_number'] ?? 'Dining Only',
+                'guest_name' => $bData['guest_name'],
+                'guest_phone' => $bData['guest_phone'] ?? '',
+                'guest_email' => $bData['guest_email'] ?? ''
+            ]);
+        }
+
+        json_ok([
+            'id' => $newPayId,
+            'message' => 'Payment recorded successfully',
+            'invoice_status' => $invSync['invoice_status'] ?? null,
+            'balance_due' => $invSync['balance_due'] ?? null,
+        ]);
         break;
 
     case 'PUT':
@@ -110,17 +122,74 @@ switch ($method) {
             json_fail(400, 'Payment ID is required');
         }
         $d = json_decode(file_get_contents('php://input'), true) ?: [];
-        $amount = (float) ($d['amount'] ?? 0);
+        $amount = round((float) ($d['amount'] ?? 0), 2);
         $methodPay = trim($d['method'] ?? 'cash');
         $status = trim($d['status'] ?? 'pending');
         $txn = trim($d['transaction_id'] ?? '');
         $notes = trim($d['notes'] ?? '');
+        $reason = trim((string) ($d['reason'] ?? $d['refund_reason'] ?? 'Payment updated'));
 
-        $stmt = $conn->prepare("UPDATE payments SET amount=?, method=?, status=?, transaction_id=?, notes=? WHERE id=?");
-        $stmt->bind_param('dssssi', $amount, $methodPay, $status, $txn, $notes, $id);
-        executeOrFail($stmt, $conn);
+        if ($amount <= 0) {
+            json_fail(400, 'Payment amount must be positive');
+        }
+        if (!in_array($status, ['pending', 'completed', 'refunded', 'failed'], true)) {
+            json_fail(400, 'Invalid payment status');
+        }
 
-        json_ok(['message' => 'Payment updated successfully']);
+        $conn->begin_transaction();
+        try {
+            $pLock = $conn->prepare("SELECT * FROM payments WHERE id = ? FOR UPDATE");
+            $pLock->bind_param('i', $id);
+            $pLock->execute();
+            $existingPay = $pLock->get_result()->fetch_assoc();
+            $pLock->close();
+            if (!$existingPay) {
+                $conn->rollback();
+                json_fail(404, 'Payment not found');
+            }
+
+            $isRefundOrAmountEdit = ($status === 'refunded' && $existingPay['status'] !== 'refunded')
+                || abs($amount - (float) $existingPay['amount']) > 0.009;
+
+            if ($isRefundOrAmountEdit && !in_array($authUser['role'], ['admin', 'manager'], true)) {
+                $conn->rollback();
+                json_fail(403, 'Only Admin or Manager can process refunds or modify payment amounts');
+            }
+
+            $stmt = $conn->prepare("UPDATE payments SET amount=?, method=?, status=?, transaction_id=?, notes=? WHERE id=?");
+            $stmt->bind_param('dssssi', $amount, $methodPay, $status, $txn, $notes, $id);
+            if (!$stmt->execute()) {
+                throw new RuntimeException($stmt->error ?: 'Failed to update payment');
+            }
+            $stmt->close();
+
+            if ($isRefundOrAmountEdit) {
+                $actionName = ($status === 'refunded') ? 'refund' : 'payment_adjustment';
+                FinancialService::recordAudit(
+                    $conn,
+                    'payment',
+                    $id,
+                    $actionName,
+                    ['amount' => (float) $existingPay['amount'], 'status' => $existingPay['status']],
+                    ['amount' => $amount, 'status' => $status],
+                    $reason,
+                    (int) $authUser['id'],
+                    $authUser['role']
+                );
+            }
+
+            $invSync = FinancialService::syncInvoiceStatusFromPayments($conn, (int) $existingPay['booking_id']);
+            $conn->commit();
+
+            json_ok([
+                'message' => 'Payment updated successfully',
+                'invoice_status' => $invSync['invoice_status'] ?? null,
+                'balance_due' => $invSync['balance_due'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            $conn->rollback();
+            json_fail(500, 'Failed to update payment: ' . $e->getMessage());
+        }
         break;
 
     default:

@@ -2,6 +2,25 @@
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/helpers.php';
 
+// Centralized Role-Based Access Control (RBAC) Groups
+const ROLE_GROUP_ADMIN_ONLY   = ['admin'];
+const ROLE_GROUP_MANAGEMENT   = ['admin', 'manager'];
+const ROLE_GROUP_FRONT_DESK   = ['admin', 'manager', 'receptionist'];
+const ROLE_GROUP_ALL_STAFF    = ['admin', 'manager', 'receptionist', 'housekeeping', 'maintenance'];
+const ROLE_GROUP_HOUSEKEEPING = ['admin', 'manager', 'housekeeping'];
+const ROLE_GROUP_MAINTENANCE  = ['admin', 'manager', 'maintenance'];
+
+function isFrontDeskRole(array $user): bool {
+    return in_array($user['role'] ?? '', ROLE_GROUP_FRONT_DESK, true);
+}
+
+function requireRole(array $user, array $allowed_roles, string $message = ''): void {
+    $role = $user['role'] ?? '';
+    if (!in_array($role, $allowed_roles, true)) {
+        json_fail(403, $message !== '' ? $message : ('Access denied for role: ' . $role));
+    }
+}
+
 function authenticate($allowed_roles = []) {
     $auth = getAuthorizationHeader();
     if (!$auth || !str_starts_with($auth, 'Bearer ')) {
@@ -21,7 +40,7 @@ function authenticate($allowed_roles = []) {
     }
 
     $conn = getConnection();
-    $stmt = $conn->prepare("SELECT id, name, email, role, status FROM users WHERE id = ? AND status = 'active'");
+    $stmt = $conn->prepare("SELECT id, name, email, role, status FROM users WHERE id = ? AND status = 'active' AND deleted_at IS NULL");
     $stmt->bind_param('i', $user_id);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();

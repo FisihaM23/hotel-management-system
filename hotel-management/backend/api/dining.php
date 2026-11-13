@@ -2,6 +2,7 @@
 require_once '../config/cors.php';
 require_once '../config/database.php';
 require_once '../config/auth_middleware.php';
+require_once '../config/financial_service.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
@@ -73,6 +74,32 @@ if ($chkCount && (int)$chkCount->fetch_assoc()['c'] === 0) {
 $frontDesk = ['admin', 'manager', 'receptionist'];
 $menuManagers = ['admin', 'manager'];
 
+function logDiningSecurityEvent(mysqli $conn, ?array $authUser, string $eventType, array $details = []): void {
+    $userId = $authUser ? (int) ($authUser['id'] ?? 0) : 0;
+    $role = $authUser['role'] ?? 'unknown';
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $payload = json_encode($details, JSON_UNESCAPED_UNICODE);
+    error_log("[Dining Security] type=$eventType user_id=$userId role=$role ip=$ip details=$payload");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS dining_security_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NULL,
+        user_role VARCHAR(50) NULL,
+        event_type VARCHAR(100) NOT NULL,
+        details TEXT NULL,
+        ip_address VARCHAR(64) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX (user_id),
+        INDEX (event_type)
+    )");
+    $stmt = $conn->prepare("INSERT INTO dining_security_logs (user_id, user_role, event_type, details, ip_address) VALUES (?, ?, ?, ?, ?)");
+    if ($stmt) {
+        $stmt->bind_param('issss', $userId, $role, $eventType, $payload, $ip);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
 if ($action === 'orders' && $method === 'GET') {
     if ($authUser['role'] === 'customer') {
         $stmt = $conn->prepare("SELECT o.*, u.name as customer_name, u.phone as customer_phone, u.email as customer_email
@@ -106,6 +133,10 @@ if ($action === 'create_order' && $method === 'POST') {
         json_fail(400, 'Order items are required');
     }
 
+    if (!in_array($authUser['role'], array_merge($frontDesk, ['customer']), true)) {
+        json_fail(403, 'Access denied: your role cannot create dining orders');
+    }
+
     $customerId = (int) $authUser['id'];
     if (in_array($authUser['role'], $frontDesk, true) && !empty($data['customer_id'])) {
         $customerId = (int) $data['customer_id'];
@@ -114,24 +145,42 @@ if ($action === 'create_order' && $method === 'POST') {
     $cleanItems = [];
     $total = 0.0;
     foreach ($rawItems as $row) {
+        if (!is_array($row)) {
+            json_fail(400, 'Invalid order item format');
+        }
         $itemId = (int) ($row['id'] ?? 0);
-        $qty = max(1, (int) ($row['qty'] ?? 1));
-        if (!$itemId) {
-            continue;
+        $rawQty = $row['qty'] ?? 1;
+        if (!is_numeric($rawQty) || (int) $rawQty < 1 || (int) $rawQty > 100) {
+            logDiningSecurityEvent($conn, $authUser, 'invalid_quantity', ['item_id' => $itemId, 'qty' => $rawQty]);
+            json_fail(400, 'Order item quantity must be between 1 and 100');
+        }
+        $qty = (int) $rawQty;
+        if ($itemId <= 0) {
+            json_fail(400, 'Valid menu item ID is required');
         }
         $stmt = $conn->prepare("SELECT id, name, price, is_available FROM menu_items WHERE id = ?");
         $stmt->bind_param('i', $itemId);
         $stmt->execute();
         $menu = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
         if (!$menu || !(int) $menu['is_available']) {
             json_fail(400, 'One or more menu items are unavailable');
         }
-        $subtotal = (float) $menu['price'] * $qty;
-        $total += $subtotal;
+        $dbPrice = (float) $menu['price'];
+        if (isset($row['price']) && abs((float) $row['price'] - $dbPrice) > 0.01) {
+            logDiningSecurityEvent($conn, $authUser, 'price_manipulation_attempt', [
+                'item_id' => $itemId,
+                'submitted_price' => (float) $row['price'],
+                'db_price' => $dbPrice,
+            ]);
+            json_fail(400, 'Submitted item price does not match current menu price');
+        }
+        $subtotal = round($dbPrice * $qty, 2);
+        $total = round($total + $subtotal, 2);
         $cleanItems[] = [
             'id' => (int) $menu['id'],
             'name' => $menu['name'],
-            'price' => (float) $menu['price'],
+            'price' => $dbPrice,
             'qty' => $qty,
             'subtotal' => $subtotal,
         ];
@@ -139,38 +188,132 @@ if ($action === 'create_order' && $method === 'POST') {
     if (empty($cleanItems) || $total <= 0) {
         json_fail(400, 'Order items and total amount are required');
     }
+    if (isset($data['total_amount']) && abs((float) $data['total_amount'] - $total) > 0.01) {
+        logDiningSecurityEvent($conn, $authUser, 'total_manipulation_attempt', [
+            'submitted_total' => (float) $data['total_amount'],
+            'server_total' => $total,
+        ]);
+        json_fail(400, 'Submitted order total does not match server-calculated total');
+    }
 
     $order_num = 'ORD-' . date('Y') . '-' . strtoupper(substr(uniqid(), -6));
-    $room_num = $data['room_number'] ?? null;
+    $room_num = isset($data['room_number']) ? trim((string) $data['room_number']) : '';
     $itemsJson = json_encode($cleanItems);
     $delivery = in_array($data['delivery_type'] ?? '', ['room_service', 'restaurant_dine_in', 'takeaway'], true)
         ? $data['delivery_type'] : 'room_service';
     $status = 'pending';
+    $notes = $data['special_notes'] ?? '';
+    $bookingId = !empty($data['booking_id']) ? (int) $data['booking_id'] : null;
 
-    // Room is optional for dining-only customers (Restaurant Dine-In / Takeaway)
-    $isDiningOnly = empty($room_num) || $delivery !== 'room_service';
+    $bookingTotalForSummary = 0.0;
+    if ($bookingId) {
+        $bOwnStmt = $conn->prepare("SELECT id, customer_id, status, total_amount FROM bookings WHERE id = ? AND deleted_at IS NULL LIMIT 1");
+        if ($bOwnStmt) {
+            $bOwnStmt->bind_param('i', $bookingId);
+            $bOwnStmt->execute();
+            $bOwnRow = $bOwnStmt->get_result()->fetch_assoc();
+            $bOwnStmt->close();
+            if (!$bOwnRow) {
+                json_fail(404, 'Referenced booking not found');
+            }
+            if ($authUser['role'] === 'customer' && (int) $bOwnRow['customer_id'] !== (int) $authUser['id']) {
+                logDiningSecurityEvent($conn, $authUser, 'booking_idor_attempt', ['booking_id' => $bookingId]);
+                json_fail(403, 'Access denied: cannot attach order to another customer\'s booking');
+            }
+            $bookingTotalForSummary = (float) ($bOwnRow['total_amount'] ?? 0);
+        }
+    }
+
+    // Room-based vs non-room dining authorization
+    $isDiningOnly = ($delivery !== 'room_service');
 
     if ($isDiningOnly) {
-        $room_num = !empty($room_num) ? $room_num : 'Dining Plaza';
-        // For dining-only customers without a room, due is not permitted - full payment is mandatory
+        // Non-room dining workflow (restaurant_dine_in / takeaway): never trust customer-submitted room_number
+        $room_num = 'Dining Plaza';
         if (isset($data['payment_status']) && $data['payment_status'] === 'charged_to_room') {
             json_fail(400, 'Charge to Room is only permitted for guests with an active room reservation.');
         }
-        if (isset($data['payment_status']) && $data['payment_status'] === 'unpaid' && $authUser['role'] === 'customer') {
-            json_fail(400, 'Due is not permitted for dining-only orders. Full payment is mandatory.');
-        }
-        $payment = 'paid';
     } else {
+        // Room service: verify room and active checked-in booking
+        if ($room_num === '') {
+            json_fail(400, 'Room number is required for room service orders.');
+        }
+
+        $rbStmt = $conn->prepare("
+            SELECT r.id AS room_id, r.room_number, b.id AS booking_id, b.customer_id, b.status AS booking_status, b.total_amount
+            FROM rooms r
+            LEFT JOIN bookings b ON b.room_id = r.id AND b.status = 'checked_in' AND b.deleted_at IS NULL
+            WHERE r.room_number = ?
+            ORDER BY b.id DESC
+            LIMIT 1
+        ");
+        $rbStmt->bind_param('s', $room_num);
+        $rbStmt->execute();
+        $rbRow = $rbStmt->get_result()->fetch_assoc();
+        $rbStmt->close();
+
+        if (!$rbRow) {
+            logDiningSecurityEvent($conn, $authUser, 'fake_room_number_attempt', ['room_number' => $room_num]);
+            json_fail(403, 'Invalid or unauthorized room number for room service.');
+        }
+        if (empty($rbRow['booking_id'])) {
+            logDiningSecurityEvent($conn, $authUser, 'room_without_checked_in_booking', ['room_number' => $room_num]);
+            json_fail(403, 'Room service is only available for rooms with an active checked-in guest.');
+        }
+
+        if ($authUser['role'] === 'customer') {
+            if ((int) $rbRow['customer_id'] !== (int) $authUser['id']) {
+                logDiningSecurityEvent($conn, $authUser, 'other_customer_room_spoof', [
+                    'room_number' => $room_num,
+                    'actual_customer_id' => (int) $rbRow['customer_id'],
+                ]);
+                json_fail(403, 'Access denied: you do not have an active checked-in booking for this room.');
+            }
+            if ($bookingId && $bookingId !== (int) $rbRow['booking_id']) {
+                logDiningSecurityEvent($conn, $authUser, 'booking_room_mismatch', [
+                    'booking_id' => $bookingId,
+                    'room_booking_id' => (int) $rbRow['booking_id'],
+                ]);
+                json_fail(403, 'Access denied: booking does not match the specified room.');
+            }
+        }
+
+        $bookingId = (int) $rbRow['booking_id'];
+        $bookingTotalForSummary = (float) ($rbRow['total_amount'] ?? 0);
+        $room_num = $rbRow['room_number'];
+        if (in_array($authUser['role'], $frontDesk, true) && empty($data['customer_id'])) {
+            $customerId = (int) $rbRow['customer_id'];
+        }
+    }
+
+    // Derive payment_status exclusively from server-side payment records for customers
+    if ($authUser['role'] === 'customer') {
         $payment = 'unpaid';
-        if (in_array($authUser['role'], $frontDesk, true)
-            && in_array($data['payment_status'] ?? '', ['unpaid', 'paid', 'charged_to_room'], true)) {
+        if ($bookingId) {
+            $finSummary = FinancialService::getBookingSummary($conn, $bookingId, $bookingTotalForSummary);
+            $paidAmt = (float) ($finSummary['paid_amount'] ?? 0);
+            $bookingTotal = (float) ($finSummary['total_amount'] ?? 0);
+            if ($paidAmt > 0 && ($paidAmt - $bookingTotal) >= ($total - 0.01)) {
+                $payment = 'paid';
+            }
+        }
+        if (isset($data['payment_status']) && $data['payment_status'] === 'paid' && $payment !== 'paid') {
+            logDiningSecurityEvent($conn, $authUser, 'payment_status_spoof', [
+                'submitted_payment_status' => $data['payment_status'],
+                'derived_payment_status' => $payment,
+                'delivery_type' => $delivery,
+                'room_number' => $room_num,
+            ]);
+        }
+    } else {
+        $payment = $isDiningOnly ? 'paid' : 'unpaid';
+        if (in_array($data['payment_status'] ?? '', ['unpaid', 'paid', 'charged_to_room'], true)) {
             $payment = $data['payment_status'];
         }
     }
-    $notes = $data['special_notes'] ?? '';
 
-    $stmt = $conn->prepare("INSERT INTO dining_orders (order_number, customer_id, room_number, items, total_amount, delivery_type, status, payment_status, special_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param('sisdsssss', $order_num, $customerId, $room_num, $itemsJson, $total, $delivery, $status, $payment, $notes);
+    $stmt = $conn->prepare("INSERT INTO dining_orders (order_number, customer_id, booking_id, room_number, items, total_amount, delivery_type, status, payment_status, special_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param('siisdsssss', $order_num, $customerId, $bookingId, $room_num, $itemsJson, $total, $delivery, $status, $payment, $notes);
 
     if ($stmt->execute()) {
         $newId = $conn->insert_id;
@@ -355,26 +498,94 @@ switch ($method) {
         if (!$id) {
             json_fail(400, 'Item ID is required');
         }
-        $d = json_decode(file_get_contents('php://input'), true) ?: [];
-        $name = trim($d['name'] ?? '');
-        $cat = $d['category'] ?? 'food';
-        $sub = $d['sub_category'] ?? 'General';
-        $price = (float) ($d['price'] ?? 0);
-
-        // Enforce minimum price of at least 150 ETB for food items
-        if (in_array($cat, ['food', 'ethiopian_food'], true)) {
-            if ($price < 150.00) {
-                json_fail(400, 'Minimum price for food and Ethiopian dishes must be at least 150 ETB');
-            }
+        $exStmt = $conn->prepare('SELECT * FROM menu_items WHERE id = ? LIMIT 1');
+        $exStmt->bind_param('i', $id);
+        $exStmt->execute();
+        $existingItem = $exStmt->get_result()->fetch_assoc();
+        $exStmt->close();
+        if (!$existingItem) {
+            json_fail(404, 'Menu item not found');
         }
 
-        $desc = $d['description'] ?? '';
-        $img = $d['image_url'] ?? '';
-        $abv = !empty($d['alcohol_by_volume']) ? $d['alcohol_by_volume'] : null;
-        $prep = $d['preparation_time'] ?? '15 mins';
-        $avail = isset($d['is_available']) ? (int) $d['is_available'] : 1;
-        $stmt = $conn->prepare("UPDATE menu_items SET name=?, category=?, sub_category=?, price=?, description=?, image_url=?, alcohol_by_volume=?, preparation_time=?, is_available=? WHERE id=?");
-        $stmt->bind_param('sssdssssii', $name, $cat, $sub, $price, $desc, $img, $abv, $prep, $avail, $id);
+        $d = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($d) || empty($d)) {
+            json_fail(400, 'No update fields provided');
+        }
+
+        $effectiveCat = array_key_exists('category', $d) ? trim((string) $d['category']) : $existingItem['category'];
+        $effectivePrice = array_key_exists('price', $d) ? $d['price'] : (float) $existingItem['price'];
+        if (array_key_exists('price', $d) && (!is_numeric($effectivePrice) || (float) $effectivePrice <= 0)) {
+            json_fail(400, 'Price must be a positive number');
+        }
+        if (in_array($effectiveCat, ['food', 'ethiopian_food'], true) && (float) $effectivePrice < 150.00) {
+            json_fail(400, 'Minimum price for food and Ethiopian dishes must be at least 150 ETB');
+        }
+
+        $updates = [];
+        $types = '';
+        $values = [];
+
+        if (array_key_exists('name', $d)) {
+            $name = trim((string) $d['name']);
+            if ($name === '') {
+                json_fail(400, 'Item name cannot be empty');
+            }
+            $updates[] = 'name = ?';
+            $types .= 's';
+            $values[] = $name;
+        }
+        if (array_key_exists('category', $d)) {
+            if ($effectiveCat === '') {
+                json_fail(400, 'Category cannot be empty');
+            }
+            $updates[] = 'category = ?';
+            $types .= 's';
+            $values[] = $effectiveCat;
+        }
+        if (array_key_exists('sub_category', $d)) {
+            $updates[] = 'sub_category = ?';
+            $types .= 's';
+            $values[] = (string) $d['sub_category'];
+        }
+        if (array_key_exists('price', $d)) {
+            $updates[] = 'price = ?';
+            $types .= 'd';
+            $values[] = round((float) $d['price'], 2);
+        }
+        if (array_key_exists('description', $d)) {
+            $updates[] = 'description = ?';
+            $types .= 's';
+            $values[] = (string) $d['description'];
+        }
+        if (array_key_exists('image_url', $d)) {
+            $updates[] = 'image_url = ?';
+            $types .= 's';
+            $values[] = (string) $d['image_url'];
+        }
+        if (array_key_exists('alcohol_by_volume', $d)) {
+            $updates[] = 'alcohol_by_volume = ?';
+            $types .= 's';
+            $values[] = !empty($d['alcohol_by_volume']) ? (string) $d['alcohol_by_volume'] : null;
+        }
+        if (array_key_exists('preparation_time', $d)) {
+            $updates[] = 'preparation_time = ?';
+            $types .= 's';
+            $values[] = (string) $d['preparation_time'];
+        }
+        if (array_key_exists('is_available', $d)) {
+            $updates[] = 'is_available = ?';
+            $types .= 'i';
+            $values[] = (int) (bool) $d['is_available'];
+        }
+
+        if (empty($updates)) {
+            json_fail(400, 'No valid menu item fields provided to update');
+        }
+
+        $types .= 'i';
+        $values[] = $id;
+        $stmt = $conn->prepare('UPDATE menu_items SET ' . implode(', ', $updates) . ' WHERE id = ?');
+        $stmt->bind_param($types, ...$values);
         executeOrFail($stmt, $conn);
         json_ok(['message' => 'Menu item updated successfully']);
         break;

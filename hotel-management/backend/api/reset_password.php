@@ -122,8 +122,9 @@ try {
     // 6. Hash new password using PASSWORD_DEFAULT (BCRYPT)
     $newHash = password_hash($password, PASSWORD_DEFAULT);
 
-    // 7. Update user's password without modifying role, status, or any other user data
-    $updUser = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+    // 7. Update user's password and clear must_change_password without modifying role or status
+    ensureMustChangePasswordColumn($conn);
+    $updUser = $conn->prepare("UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?");
     if (!$updUser) throw new RuntimeException($conn->error);
     $updUser->bind_param("si", $newHash, $userId);
     if (!$updUser->execute()) throw new RuntimeException($updUser->error ?: 'Failed to update user password');

@@ -15,9 +15,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $conn = getConnection();
+ensureMustChangePasswordColumn($conn);
 
 // Retrieve fresh user record directly from database; never trust client-supplied identity
-$stmt = $conn->prepare("SELECT id, name, email, password, role, status FROM users WHERE id = ? AND status = 'active' LIMIT 1");
+$stmt = $conn->prepare("SELECT id, name, email, password, role, status, must_change_password FROM users WHERE id = ? AND status = 'active' LIMIT 1");
 $stmt->bind_param("i", $userId);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
@@ -32,6 +33,60 @@ $clientIp = getClientIp();
 
 $data = json_decode(file_get_contents('php://input'), true) ?: [];
 $action = trim($_GET['action'] ?? $data['action'] ?? '');
+
+// ── ACTION 0: FIRST-LOGIN FORCED PASSWORD CHANGE (when must_change_password = 1) ──
+if ($action === 'force_change_password') {
+    if (empty($user['must_change_password'])) {
+        json_fail(400, 'Account does not require a forced temporary password change. Please use OTP-verified change_password.');
+    }
+    $currentPassword = (string)($data['current_password'] ?? '');
+    $newPassword = (string)($data['new_password'] ?? '');
+    $confirmPassword = (string)($data['confirm_password'] ?? '');
+
+    if (empty($currentPassword) || empty($newPassword) || empty($confirmPassword)) {
+        json_fail(400, 'Current password, new password, and confirmation are required.');
+    }
+    if ($newPassword !== $confirmPassword) {
+        json_fail(400, 'New password and confirmation do not match.');
+    }
+    if (!passwordMeetsPolicy($newPassword)) {
+        json_fail(400, passwordPolicyMessage());
+    }
+    if (!password_verify($currentPassword, $user['password'])) {
+        json_fail(400, 'Current temporary password is incorrect.');
+    }
+    if (password_verify($newPassword, $user['password'])) {
+        json_fail(400, 'New password cannot be the same as your temporary password.');
+    }
+
+    $conn->begin_transaction();
+    try {
+        $newHash = password_hash($newPassword, PASSWORD_BCRYPT);
+        $updUser = $conn->prepare("UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?");
+        $updUser->bind_param("si", $newHash, $userId);
+        if (!$updUser->execute()) throw new RuntimeException($updUser->error ?: 'Failed to update password');
+
+        $invalAll = $conn->prepare("UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0");
+        if ($invalAll) {
+            $invalAll->bind_param("i", $userId);
+            $invalAll->execute();
+        }
+
+        $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Password Updated', 'Your temporary password was updated on first login.', 'success')");
+        if ($notif) {
+            $notif->bind_param("i", $userId);
+            $notif->execute();
+        }
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        error_log("[ForceChangePassword] Failed: " . $e->getMessage());
+        json_fail(500, 'Failed to update password safely.');
+    }
+
+    json_ok(['status' => 'success', 'message' => 'Password updated successfully.', 'must_change_password' => false]);
+    exit;
+}
 
 // ── ACTION 1: REQUEST OTP ───────────────────────────────────────────────────
 if ($action === 'request_otp') {
@@ -241,10 +296,11 @@ if ($action === 'change_password') {
     // Database Transaction: Update password, invalidate all tokens, and log notification
     $conn->begin_transaction();
     try {
+        ensureMustChangePasswordColumn($conn);
         $newHash = password_hash($newPassword, PASSWORD_BCRYPT);
 
-        // Update password
-        $updUser = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
+        // Update password and clear first-login temporary password requirement
+        $updUser = $conn->prepare("UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?");
         if (!$updUser) throw new RuntimeException($conn->error);
         $updUser->bind_param("si", $newHash, $userId);
         if (!$updUser->execute()) throw new RuntimeException($updUser->error ?: 'Failed to update user password');

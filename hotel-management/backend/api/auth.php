@@ -30,7 +30,8 @@ if ($action === 'login') {
     if (empty($email) || empty($password)) {
         json_fail(400, 'Email and password required');
     }
-    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? AND status = 'active'");
+    ensureMustChangePasswordColumn($conn);
+    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? AND status = 'active' AND deleted_at IS NULL");
     $stmt->bind_param('s', $email);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
@@ -47,12 +48,16 @@ if ($action === 'login') {
 
     if ($user && $valid) {
         unset($user['password']);
+        $mustChange = !empty($user['must_change_password']);
+        $user['must_change_password'] = $mustChange;
         $token = makeAuthToken($user);
-        $msg = 'Welcome back, ' . $user['name'];
+        $msg = $mustChange
+            ? 'Welcome back, ' . $user['name'] . '. Please update your temporary password.'
+            : 'Welcome back, ' . $user['name'];
         $notif = $conn->prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, 'Login', ?, 'info')");
         $notif->bind_param('is', $user['id'], $msg);
         $notif->execute();
-        json_ok(['token' => $token, 'user' => $user]);
+        json_ok(['token' => $token, 'user' => $user, 'must_change_password' => $mustChange]);
     } else {
         json_fail(401, 'Invalid credentials');
     }
@@ -138,18 +143,21 @@ if ($action === 'register') {
             $notif->execute();
         }
 
-        // 3. Send Welcome Email via Resend with multi-channel fallback
+        // 3. Send Welcome Email via Resend directly to the customer's registered email
         require_once __DIR__ . '/../config/resend.php';
         $frontendOrigin = !empty($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : 'http://localhost:5173';
         $loginUrl = rtrim($frontendOrigin, '/') . '/login';
-        $emailRes = sendCustomerWelcomeEmail($regEmail, $regName, ['loginUrl' => $loginUrl, 'phone' => $phone]);
-
-        $respMsg = 'Account registered successfully! Welcome to Grand 6-Floor Hotel.';
-        if (!empty($emailRes['success'])) {
-            $respMsg = !empty($emailRes['sandbox_mode'])
-                ? 'Account registered successfully! Welcome notification generated and welcome packet dispatched.'
-                : 'Account registered successfully! A welcome email has been sent to your email address.';
+        
+        $emailRes = ['success' => false];
+        try {
+            $emailRes = sendCustomerWelcomeEmail($regEmail, $regName, ['loginUrl' => $loginUrl, 'phone' => $phone]);
+        } catch (\Throwable $e) {
+            error_log("[Auth Registration Welcome Email Error] " . $e->getMessage());
         }
+
+        $respMsg = !empty($emailRes['success'])
+            ? 'Account registered successfully! A welcome email has been sent to your registered email address.'
+            : 'Account registered successfully! Welcome to Grand Hotel.';
 
         // Create user session payload & token for seamless immediate authentication
         $userRecord = [
@@ -170,8 +178,8 @@ if ($action === 'register') {
             'message' => $respMsg,
             'email_sent' => !empty($emailRes['success']),
             'email_id' => $emailRes['id'] ?? null,
-            'email_channel' => $emailRes['channel'] ?? 'none',
-            'sandbox_mode' => !empty($emailRes['sandbox_mode']),
+            'email_channel' => $emailRes['channel'] ?? 'resend',
+            'email_recipient' => $regEmail,
             'notification_created' => true
         ]);
     } else {

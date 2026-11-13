@@ -11,16 +11,8 @@ function withDefaults(array $defaults, array $counts) {
     return array_merge($defaults, array_intersect_key($counts, $defaults));
 }
 
-// Auto-heal: Ensure rooms marked 'occupied' return to 'available' if all bookings were deleted or completed
-$conn->query("UPDATE rooms r 
-    SET r.status = 'available' 
-    WHERE r.status = 'occupied' 
-    AND NOT EXISTS (
-        SELECT 1 FROM bookings b 
-        WHERE b.room_id = r.id 
-        AND b.status IN ('checked_in', 'confirmed') 
-        AND b.check_out >= CURDATE()
-    )");
+// Auto-heal via centralized RoomStatusService
+RoomStatusService::autoHealRooms($conn);
 
 $roomStats = [];
 $result = $conn->query("SELECT status, COUNT(*) as count FROM rooms GROUP BY status");
@@ -46,59 +38,61 @@ while ($result && $row = $result->fetch_assoc()) {
 }
 $stats['room_types'] = $roomTypes;
 
-$bookingStats = [];
-$result = $conn->query("SELECT status, COUNT(*) as count FROM bookings GROUP BY status");
-while ($result && $row = $result->fetch_assoc()) $bookingStats[$row['status']] = (int) $row['count'];
-$bookingStats = withDefaults([
-    'pending' => 0, 'confirmed' => 0, 'checked_in' => 0, 'checked_out' => 0, 'cancelled' => 0,
-], $bookingStats);
-$stats['bookings'] = $bookingStats;
-$stats['total_bookings'] = array_sum($bookingStats);
-$stats['active_bookings'] = $bookingStats['confirmed'] + $bookingStats['checked_in'];
+if (isFrontDeskRole($authUser)) {
+    $bookingStats = [];
+    $result = $conn->query("SELECT status, COUNT(*) as count FROM bookings WHERE deleted_at IS NULL GROUP BY status");
+    while ($result && $row = $result->fetch_assoc()) $bookingStats[$row['status']] = (int) $row['count'];
+    $bookingStats = withDefaults([
+        'pending' => 0, 'confirmed' => 0, 'checked_in' => 0, 'checked_out' => 0, 'cancelled' => 0,
+    ], $bookingStats);
+    $stats['bookings'] = $bookingStats;
+    $stats['total_bookings'] = array_sum($bookingStats);
+    $stats['active_bookings'] = $bookingStats['confirmed'] + $bookingStats['checked_in'];
 
-$result = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE check_in = CURDATE() AND status IN ('pending','confirmed')");
-$stats['arrivals_today'] = (int) $result->fetch_assoc()['count'];
-$result = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE check_out = CURDATE() AND status = 'checked_in'");
-$stats['departures_today'] = (int) $result->fetch_assoc()['count'];
-$result = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE check_in > CURDATE() AND status IN ('pending','confirmed')");
-$stats['upcoming_arrivals'] = (int) $result->fetch_assoc()['count'];
-$result = $conn->query("SELECT COALESCE(SUM(b.adults + b.children), 0) as count FROM bookings b WHERE b.status = 'checked_in'");
-$stats['in_house_guests'] = (int) $result->fetch_assoc()['count'];
+    $result = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE deleted_at IS NULL AND check_in = CURDATE() AND status IN ('pending','confirmed')");
+    $stats['arrivals_today'] = (int) $result->fetch_assoc()['count'];
+    $result = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE deleted_at IS NULL AND check_out = CURDATE() AND status = 'checked_in'");
+    $stats['departures_today'] = (int) $result->fetch_assoc()['count'];
+    $result = $conn->query("SELECT COUNT(*) as count FROM bookings WHERE deleted_at IS NULL AND check_in > CURDATE() AND status IN ('pending','confirmed')");
+    $stats['upcoming_arrivals'] = (int) $result->fetch_assoc()['count'];
+    $result = $conn->query("SELECT COALESCE(SUM(b.adults + b.children), 0) as count FROM bookings b WHERE b.deleted_at IS NULL AND b.status = 'checked_in'");
+    $stats['in_house_guests'] = (int) $result->fetch_assoc()['count'];
 
-$result = $conn->query("SELECT COALESCE(SUM(amount),0) as revenue FROM payments
-    WHERE status = 'completed' AND MONTH(paid_at)=MONTH(NOW()) AND YEAR(paid_at)=YEAR(NOW())");
-$stats['monthly_revenue'] = (float) $result->fetch_assoc()['revenue'];
+    $result = $conn->query("SELECT COALESCE(SUM(amount),0) as revenue FROM payments
+        WHERE status = 'completed' AND MONTH(paid_at)=MONTH(NOW()) AND YEAR(paid_at)=YEAR(NOW())");
+    $stats['monthly_revenue'] = (float) $result->fetch_assoc()['revenue'];
 
-$result = $conn->query("SELECT COALESCE(SUM(amount),0) as revenue FROM payments
-    WHERE status = 'completed' AND DATE(paid_at) = CURDATE()");
-$stats['revenue_today'] = (float) $result->fetch_assoc()['revenue'];
+    $result = $conn->query("SELECT COALESCE(SUM(amount),0) as revenue FROM payments
+        WHERE status = 'completed' AND DATE(paid_at) = CURDATE()");
+    $stats['revenue_today'] = (float) $result->fetch_assoc()['revenue'];
 
-$revenueByDay = [];
-$result = $conn->query("SELECT DATE(paid_at) as day, SUM(amount) as total FROM payments
-    WHERE status = 'completed' AND paid_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-    GROUP BY DATE(paid_at)");
-while ($result && $row = $result->fetch_assoc()) $revenueByDay[$row['day']] = (float) $row['total'];
+    $revenueByDay = [];
+    $result = $conn->query("SELECT DATE(paid_at) as day, SUM(amount) as total FROM payments
+        WHERE status = 'completed' AND paid_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+        GROUP BY DATE(paid_at)");
+    while ($result && $row = $result->fetch_assoc()) $revenueByDay[$row['day']] = (float) $row['total'];
 
-$revenueSeries = [];
-for ($i = 6; $i >= 0; $i--) {
-    $day = date('Y-m-d', strtotime("-$i day"));
-    $revenueSeries[] = [
-        'date' => $day,
-        'label' => date('D', strtotime($day)),
-        'total' => $revenueByDay[$day] ?? 0.0,
-    ];
+    $revenueSeries = [];
+    for ($i = 6; $i >= 0; $i--) {
+        $day = date('Y-m-d', strtotime("-$i day"));
+        $revenueSeries[] = [
+            'date' => $day,
+            'label' => date('D', strtotime($day)),
+            'total' => $revenueByDay[$day] ?? 0.0,
+        ];
+    }
+    $stats['revenue_series'] = $revenueSeries;
+
+    $result = $conn->query("SELECT COALESCE(SUM(b.total_amount), 0) - COALESCE(SUM(p.paid), 0) as outstanding
+        FROM bookings b
+        LEFT JOIN (SELECT booking_id, SUM(amount) as paid FROM payments WHERE status = 'completed' GROUP BY booking_id) p
+            ON p.booking_id = b.id
+        WHERE b.deleted_at IS NULL AND b.status != 'cancelled'");
+    $stats['outstanding_balance'] = max(0, (float) $result->fetch_assoc()['outstanding']);
+
+    $result = $conn->query("SELECT COUNT(*) as count FROM users WHERE role='customer' AND deleted_at IS NULL");
+    $stats['total_guests'] = (int) $result->fetch_assoc()['count'];
 }
-$stats['revenue_series'] = $revenueSeries;
-
-$result = $conn->query("SELECT COALESCE(SUM(b.total_amount), 0) - COALESCE(SUM(p.paid), 0) as outstanding
-    FROM bookings b
-    LEFT JOIN (SELECT booking_id, SUM(amount) as paid FROM payments WHERE status = 'completed' GROUP BY booking_id) p
-        ON p.booking_id = b.id
-    WHERE b.status != 'cancelled'");
-$stats['outstanding_balance'] = max(0, (float) $result->fetch_assoc()['outstanding']);
-
-$result = $conn->query("SELECT COUNT(*) as count FROM users WHERE role='customer'");
-$stats['total_guests'] = (int) $result->fetch_assoc()['count'];
 
 $hkStats = [];
 $result = $conn->query("SELECT status, COUNT(*) as count FROM housekeeping_tasks GROUP BY status");
@@ -119,17 +113,22 @@ $result = $conn->query("SELECT COUNT(*) as count FROM maintenance_requests
     WHERE status NOT IN ('resolved','closed') AND priority IN ('high','urgent')");
 $stats['maintenance']['urgent_open'] = (int) $result->fetch_assoc()['count'];
 
-$result = $conn->query("SELECT COUNT(*) as count FROM users
-    WHERE role IN ('admin','manager','receptionist','housekeeping','maintenance') AND status = 'active'");
-$stats['active_staff'] = (int) $result->fetch_assoc()['count'];
+if (isFrontDeskRole($authUser)) {
+    $result = $conn->query("SELECT COUNT(*) as count FROM users
+        WHERE role IN ('admin','manager','receptionist','housekeeping','maintenance') AND status = 'active' AND deleted_at IS NULL");
+    $stats['active_staff'] = (int) $result->fetch_assoc()['count'];
 
-$result = $conn->query("SELECT b.id, b.check_in, b.check_out, b.status, b.total_amount, b.created_at,
-        u.name as guest_name, u.email as guest_email, r.room_number, r.type as room_type
-    FROM bookings b
-    JOIN users u ON b.customer_id = u.id
-    JOIN rooms r ON b.room_id = r.id
-    ORDER BY b.created_at DESC LIMIT 6");
-$stats['recent_bookings'] = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+    $result = $conn->query("SELECT b.id, b.check_in, b.check_out, b.status, b.total_amount, b.created_at,
+            u.name as guest_name, u.email as guest_email,
+            COALESCE(r.room_number, 'Dining Only') as room_number,
+            COALESCE(r.type, 'Dining Only') as room_type
+        FROM bookings b
+        JOIN users u ON b.customer_id = u.id
+        LEFT JOIN rooms r ON b.room_id = r.id
+        WHERE b.deleted_at IS NULL
+        ORDER BY b.created_at DESC LIMIT 6");
+    $stats['recent_bookings'] = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+}
 
 $stats['users'] = [];
 if ($authUser['role'] === 'admin') {

@@ -110,7 +110,7 @@ export default function CustomerPortal() {
 
     const load = () => {
         setLoading(true)
-        Promise.all([getMyBookings(), getRooms('available'), getInvoices()])
+        Promise.all([getMyBookings(), getRooms(), getInvoices()])
             .then(([b, r, inv]) => {
                 setBookings(Array.isArray(b?.data) ? b.data : [])
                 setRooms(Array.isArray(r?.data) ? r.data : [])
@@ -126,6 +126,15 @@ export default function CustomerPortal() {
     }
 
     useEffect(() => { load() }, [])
+
+    useEffect(() => {
+        if (!modal || form.is_dining_only) return
+        if (form.check_in && form.check_out && form.check_out > form.check_in) {
+            getRooms({ check_in: form.check_in, check_out: form.check_out })
+                .then(r => setRooms(Array.isArray(r?.data) ? r.data : []))
+                .catch(() => {})
+        }
+    }, [modal, form.is_dining_only, form.check_in, form.check_out])
 
     // Hotel AI State & Live Prediction
     const [aiPredictions, setAiPredictions] = useState(null)
@@ -778,7 +787,12 @@ export default function CustomerPortal() {
                                         style={{ border: form.is_dining_only ? '1px dashed #10b981' : undefined }}
                                     >
                                         <option value="">{form.is_dining_only ? '— No Room Needed (Dining & Bar Only) —' : '-- Choose an Available Room --'}</option>
-                                        {rooms.filter(r => r.status === 'available' && Number(r.is_booked) !== 1).map(r => (
+                                        {rooms.filter(r => {
+                                            const hasDates = Boolean(form.check_in && form.check_out && form.check_out > form.check_in)
+                                            return hasDates
+                                                ? (r.status !== 'maintenance' && Number(r.is_booked) !== 1)
+                                                : (r.status === 'available' && Number(r.is_booked) !== 1)
+                                        }).map(r => (
                                             <option key={r.id} value={r.id}>
                                                 Room {r.room_number} — {r.type} [Available] — ETB {Number(r.price_per_night).toFixed(2)}/night (Max {r.max_guests} guests)
                                             </option>

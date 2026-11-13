@@ -17,17 +17,6 @@ if ($auth && str_starts_with($auth, 'Bearer ')) {
 
 $conn = getConnection();
 
-// Auto-heal: Ensure rooms marked 'occupied' return to 'available' if all bookings were completed or cancelled
-$conn->query("UPDATE rooms r 
-    SET r.status = 'available' 
-    WHERE r.status = 'occupied' 
-    AND NOT EXISTS (
-        SELECT 1 FROM bookings b 
-        WHERE b.room_id = r.id 
-        AND b.status IN ('checked_in', 'confirmed') 
-        AND b.check_out >= CURDATE()
-    )");
-
 // Auto-create chat history table
 $conn->query("CREATE TABLE IF NOT EXISTS hotel_ai_chats (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -887,10 +876,10 @@ switch ($action) {
         }
 
         if ($authUser) {
-            $stmt = $conn->prepare("SELECT * FROM hotel_ai_chats WHERE user_id = ? OR session_id = ? ORDER BY created_at ASC LIMIT 50");
+            $stmt = $conn->prepare("SELECT * FROM hotel_ai_chats WHERE user_id = ? OR (user_id IS NULL AND session_id = ?) ORDER BY created_at ASC LIMIT 50");
             $stmt->bind_param('is', $authUser['id'], $sessionId);
         } else {
-            $stmt = $conn->prepare("SELECT * FROM hotel_ai_chats WHERE session_id = ? ORDER BY created_at ASC LIMIT 50");
+            $stmt = $conn->prepare("SELECT * FROM hotel_ai_chats WHERE user_id IS NULL AND session_id = ? ORDER BY created_at ASC LIMIT 50");
             $stmt->bind_param('s', $sessionId);
         }
         $stmt->execute();
@@ -912,10 +901,10 @@ switch ($action) {
         $data = json_decode(file_get_contents('php://input'), true) ?: [];
         $sessionId = $data['session_id'] ?? ($authUser ? 'user_' . $authUser['id'] : '');
         if ($authUser) {
-            $stmt = $conn->prepare("DELETE FROM hotel_ai_chats WHERE user_id = ? OR session_id = ?");
+            $stmt = $conn->prepare("DELETE FROM hotel_ai_chats WHERE user_id = ? OR (user_id IS NULL AND session_id = ?)");
             $stmt->bind_param('is', $authUser['id'], $sessionId);
         } else {
-            $stmt = $conn->prepare("DELETE FROM hotel_ai_chats WHERE session_id = ?");
+            $stmt = $conn->prepare("DELETE FROM hotel_ai_chats WHERE user_id IS NULL AND session_id = ?");
             $stmt->bind_param('s', $sessionId);
         }
         $stmt->execute();

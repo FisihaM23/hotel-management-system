@@ -60,7 +60,12 @@ export const register = d => api.post('/auth.php?action=register', d)
 export const testConnection = () => api.get('/test_connection.php')
 
 // Rooms
-export const getRooms = (status) => api.get('/rooms.php' + (status ? `?status=${status}` : ''))
+export const getRooms = (paramsOrStatus) => {
+    const params = typeof paramsOrStatus === 'string'
+        ? (paramsOrStatus ? { status: paramsOrStatus } : {})
+        : (paramsOrStatus || {})
+    return api.get('/rooms.php', { params })
+}
 export const createRoom = d => api.post('/rooms.php', d)
 export const updateRoom = (id, d) => api.put(`/rooms.php?id=${id}`, d)
 export const deleteRoom = id => api.delete(`/rooms.php?id=${id}`)

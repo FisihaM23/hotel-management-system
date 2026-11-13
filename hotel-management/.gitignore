@@ -37,3 +37,6 @@ Thumbs.db
 # ── Database Dumps & Backups ──────────────────────────────────────────────
 *.sql
 *.bak
+
+# ── Local test scripts ────────────────────────────────────────────────────
+test_*.php

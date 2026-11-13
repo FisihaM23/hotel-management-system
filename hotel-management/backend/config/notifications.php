@@ -287,30 +287,34 @@ function broadcastRoomOccupiedAlert($conn, $bookingId, $roomId, $roomNumber, $gu
     $dueFormatted = number_format((float) $dueAmount, 2);
     $payMethodLabel = strtoupper(str_replace('_', ' ', $paymentMethod ?: 'Cash/Direct'));
 
-    // 1. Immediately update room status to 'occupied'
+    // 1. Synchronize physical room status based on current occupancy (not future reservations)
     if (!empty($roomId)) {
-        $upd = $conn->prepare("UPDATE rooms SET status = 'occupied' WHERE id = ?");
-        $upd->bind_param("i", $roomId);
-        $upd->execute();
+        if (!function_exists('syncRoomStatus')) {
+            require_once __DIR__ . '/helpers.php';
+        }
+        syncRoomStatus($conn, $roomId);
     }
 
     // 2. Broadcast in-app notification to ALL hotel staff roles
     $staffRoles = "'admin', 'manager', 'receptionist', 'housekeeping', 'maintenance'";
     $staffRes = $conn->query("SELECT id, role, name, phone, email FROM users WHERE role IN ($staffRoles) AND status = 'active'");
 
+    $isFutureBooking = ($checkIn && $checkIn > date('Y-m-d'));
+    $stateLabel = $isFutureBooking ? 'Reserved' : 'Occupied';
+    $stateUpper = strtoupper($stateLabel);
     $dateInfo = ($checkIn && $checkOut) ? " (Stay: {$checkIn} to {$checkOut})" : "";
     if ($dueAmount > 0.01) {
-        $adminTitle = "📱 Room {$roomNumber} Occupied (Paid {$currency} {$amountFormatted} • Due {$currency} {$dueFormatted})";
+        $adminTitle = "📱 Room {$roomNumber} {$stateLabel} (Paid {$currency} {$amountFormatted} • Due {$currency} {$dueFormatted})";
         $adminMsg = "Customer {$guestName} paid {$currency} {$amountFormatted} via {$payMethodLabel} directly to Admin Account for Room {$roomNumber}{$dateInfo}. Outstanding Due balance: {$currency} {$dueFormatted}. Booking #{$bookingId}.";
 
-        $workerTitle = "🚪 Room {$roomNumber} Occupied (Due: {$currency} {$dueFormatted})";
-        $workerMsg = "Room {$roomNumber} is now OCCUPIED by {$guestName}{$dateInfo}. Outstanding DUE balance: {$currency} {$dueFormatted}. Staff please check top-right Due menu to track or collect settlement.";
+        $workerTitle = "🚪 Room {$roomNumber} {$stateLabel} (Due: {$currency} {$dueFormatted})";
+        $workerMsg = "Room {$roomNumber} is {$stateUpper} for {$guestName}{$dateInfo}. Outstanding DUE balance: {$currency} {$dueFormatted}. Staff please check top-right Due menu to track or collect settlement.";
     } else {
-        $adminTitle = "📱 Room {$roomNumber} Occupied (Paid in Full: {$currency} {$amountFormatted})";
+        $adminTitle = "📱 Room {$roomNumber} {$stateLabel} (Paid in Full: {$currency} {$amountFormatted})";
         $adminMsg = "Customer {$guestName} paid in full {$currency} {$amountFormatted} via {$payMethodLabel} directly to Admin Account for Room {$roomNumber}{$dateInfo}. Booking #{$bookingId}.";
 
-        $workerTitle = "🚪 Room {$roomNumber} is now Occupied";
-        $workerMsg = "Room {$roomNumber} is now OCCUPIED by {$guestName}{$dateInfo}. Booking #{$bookingId}. Status: Occupied.";
+        $workerTitle = "🚪 Room {$roomNumber} is {$stateLabel}";
+        $workerMsg = "Room {$roomNumber} is {$stateUpper} for {$guestName}{$dateInfo}. Booking #{$bookingId}. Status: {$stateLabel}.";
     }
 
     if ($staffRes) {

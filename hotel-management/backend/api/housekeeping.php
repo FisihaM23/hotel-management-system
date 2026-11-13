@@ -39,32 +39,59 @@ switch ($method) {
         $stmt = $conn->prepare("INSERT INTO housekeeping_tasks (room_id,assigned_to,task_type,priority,status,notes,scheduled_date) VALUES (?,?,?,?,?,?,?)");
         $stmt->bind_param('iisssss', $room_id, $assigned, $task_type, $priority, $status, $notes, $scheduled);
         executeOrFail($stmt, $conn);
-        json_ok(['id' => $conn->insert_id, 'message' => 'Task created']);
+        $newTaskId = (int) $conn->insert_id;
+        $roomStatus = $room_id > 0 ? RoomStatusService::onHousekeepingUpdated($conn, $room_id, $status) : null;
+        json_ok(['id' => $newTaskId, 'room_status' => $roomStatus, 'message' => 'Task created']);
         break;
 
     case 'PUT':
         if (!$id) {
             json_fail(400, 'Task ID is required');
         }
+        $existingStmt = $conn->prepare("SELECT room_id, assigned_to, task_type, priority, status, notes, scheduled_date FROM housekeeping_tasks WHERE id=?");
+        $existingStmt->bind_param('i', $id);
+        $existingStmt->execute();
+        $existingTask = $existingStmt->get_result()->fetch_assoc();
+        $existingStmt->close();
+        if (!$existingTask) {
+            json_fail(404, 'Task not found');
+        }
+
         $d = json_decode(file_get_contents('php://input'), true) ?: [];
+        $newStatus = $d['status'] ?? $existingTask['status'];
+        if (!in_array($newStatus, ['pending', 'in_progress', 'completed', 'cancelled'], true)) {
+            json_fail(400, 'Invalid housekeeping task status');
+        }
+        $targetRoomId = (int) $existingTask['room_id'];
+
         if ($authUser['role'] === 'housekeeping' || (isset($d['status']) && count($d) <= 2)) {
-            $completed = (($d['status'] ?? '') === 'completed') ? date('Y-m-d H:i:s') : null;
-            if (isset($d['notes'])) {
+            $completed = ($newStatus === 'completed') ? date('Y-m-d H:i:s') : null;
+            if (array_key_exists('notes', $d)) {
                 $stmt = $conn->prepare("UPDATE housekeeping_tasks SET status=?, notes=?, completed_at=? WHERE id=?");
-                $stmt->bind_param('sssi', $d['status'], $d['notes'], $completed, $id);
+                $stmt->bind_param('sssi', $newStatus, $d['notes'], $completed, $id);
             } else {
                 $stmt = $conn->prepare("UPDATE housekeeping_tasks SET status=?, completed_at=? WHERE id=?");
-                $stmt->bind_param('ssi', $d['status'], $completed, $id);
+                $stmt->bind_param('ssi', $newStatus, $completed, $id);
             }
         } else {
             authenticate(['admin', 'manager']);
-            $assigned = !empty($d['assigned_to']) ? (int) $d['assigned_to'] : null;
-            $room_id = (int) ($d['room_id'] ?? 0);
-            $stmt = $conn->prepare("UPDATE housekeeping_tasks SET room_id=?,assigned_to=?,task_type=?,priority=?,status=?,notes=?,scheduled_date=? WHERE id=?");
-            $stmt->bind_param('iisssssi', $room_id, $assigned, $d['task_type'], $d['priority'], $d['status'], $d['notes'], $d['scheduled_date'], $id);
+            $assigned = array_key_exists('assigned_to', $d) ? (!empty($d['assigned_to']) ? (int) $d['assigned_to'] : null) : ($existingTask['assigned_to'] !== null ? (int) $existingTask['assigned_to'] : null);
+            $targetRoomId = array_key_exists('room_id', $d) && !empty($d['room_id']) ? (int) $d['room_id'] : (int) $existingTask['room_id'];
+            $taskType = array_key_exists('task_type', $d) ? (string) $d['task_type'] : $existingTask['task_type'];
+            $priority = array_key_exists('priority', $d) ? (string) $d['priority'] : $existingTask['priority'];
+            $notes = array_key_exists('notes', $d) ? (string) $d['notes'] : $existingTask['notes'];
+            $scheduledDate = array_key_exists('scheduled_date', $d) ? (string) $d['scheduled_date'] : $existingTask['scheduled_date'];
+            $completed = ($newStatus === 'completed') ? date('Y-m-d H:i:s') : null;
+            $stmt = $conn->prepare("UPDATE housekeeping_tasks SET room_id=?,assigned_to=?,task_type=?,priority=?,status=?,notes=?,scheduled_date=?,completed_at=? WHERE id=?");
+            $stmt->bind_param('iissssssi', $targetRoomId, $assigned, $taskType, $priority, $newStatus, $notes, $scheduledDate, $completed, $id);
         }
         executeOrFail($stmt, $conn);
-        json_ok(['message' => 'Task updated']);
+
+        if ((int) $existingTask['room_id'] !== $targetRoomId && (int) $existingTask['room_id'] > 0) {
+            RoomStatusService::onHousekeepingUpdated($conn, (int) $existingTask['room_id'], 'deleted');
+        }
+        $roomStatus = $targetRoomId > 0 ? RoomStatusService::onHousekeepingUpdated($conn, $targetRoomId, $newStatus) : null;
+        json_ok(['message' => 'Task updated', 'room_status' => $roomStatus]);
         break;
 
     case 'DELETE':
@@ -72,9 +99,18 @@ switch ($method) {
         if (!$id) {
             json_fail(400, 'Task ID is required');
         }
+        $existingStmt = $conn->prepare("SELECT room_id FROM housekeeping_tasks WHERE id=?");
+        $existingStmt->bind_param('i', $id);
+        $existingStmt->execute();
+        $existingTask = $existingStmt->get_result()->fetch_assoc();
+        $existingStmt->close();
+
         $stmt = $conn->prepare("DELETE FROM housekeeping_tasks WHERE id=?");
         $stmt->bind_param('i', $id);
         executeOrFail($stmt, $conn);
+        if ($existingTask && !empty($existingTask['room_id'])) {
+            RoomStatusService::onHousekeepingUpdated($conn, (int) $existingTask['room_id'], 'deleted');
+        }
         json_ok(['message' => 'Task deleted']);
         break;
 

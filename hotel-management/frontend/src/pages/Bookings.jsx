@@ -126,6 +126,15 @@ export default function Bookings() {
         load()
     }, [])
 
+    useEffect(() => {
+        if (!modal || form.is_dining_only) return
+        if (form.check_in && form.check_out && form.check_out > form.check_in) {
+            getRooms({ check_in: form.check_in, check_out: form.check_out })
+                .then(r => setRooms(r.data || []))
+                .catch(() => {})
+        }
+    }, [modal, form.is_dining_only, form.check_in, form.check_out])
+
     const openAdd = () => {
         const today = new Date().toISOString().split('T')[0]
         const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
@@ -1028,20 +1037,37 @@ export default function Bookings() {
                                         style={{ border: form.is_dining_only ? '1px dashed #10b981' : undefined }}
                                     >
                                         <option value="">{form.is_dining_only ? '— No Room Needed (Dining & Bar Only) —' : '-- Choose an Available Room --'}</option>
-                                        {(onlyAvailableRooms && !editId ? rooms.filter(r => r.status === 'available' && Number(r.is_booked) !== 1) : rooms).map(r => {
-                                            const isBooked = r.status === 'occupied' || Number(r.is_booked) === 1
-                                            const statusText = isBooked ? 'OCCUPIED' : (r.status === 'available' ? 'AVAILABLE' : r.status.toUpperCase())
-                                            return (
-                                                <option key={r.id} value={r.id} disabled={r.status === 'maintenance' || isBooked}>
-                                                    Room {r.room_number} — {r.type} [{statusText}] — ETB {Number(r.price_per_night).toLocaleString()}/night (Max {r.max_guests || 2} guests)
-                                                </option>
-                                            )
-                                        })}
+                                        {(() => {
+                                            const hasDates = Boolean(form.check_in && form.check_out && form.check_out > form.check_in)
+                                            const visibleRooms = onlyAvailableRooms && !editId
+                                                ? rooms.filter(r => hasDates
+                                                    ? (r.status !== 'maintenance' && Number(r.is_booked) !== 1)
+                                                    : (r.status === 'available' && Number(r.is_booked) !== 1))
+                                                : rooms
+                                            return visibleRooms.map(r => {
+                                                const isBooked = hasDates
+                                                    ? Number(r.is_booked) === 1
+                                                    : (r.status === 'occupied' || Number(r.is_booked) === 1)
+                                                const statusText = isBooked
+                                                    ? 'OCCUPIED'
+                                                    : (hasDates ? 'AVAILABLE' : (r.status === 'available' ? 'AVAILABLE' : r.status.toUpperCase()))
+                                                return (
+                                                    <option key={r.id} value={r.id} disabled={r.status === 'maintenance' || isBooked}>
+                                                        Room {r.room_number} — {r.type} [{statusText}] — ETB {Number(r.price_per_night).toLocaleString()}/night (Max {r.max_guests || 2} guests)
+                                                    </option>
+                                                )
+                                            })
+                                        })()}
                                     </select>
                                 </div>
 
                                 {/* Room Info Banner if Selected */}
-                                {modalSelectedRoom && (
+                                {modalSelectedRoom && (() => {
+                                    const hasDates = Boolean(form.check_in && form.check_out && form.check_out > form.check_in)
+                                    const selectedUnavailable = hasDates
+                                        ? (modalSelectedRoom.status === 'maintenance' || Number(modalSelectedRoom.is_booked) === 1)
+                                        : (modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1)
+                                    return (
                                     <div style={{ background: '#eff6ff', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12, border: '1px solid #bfdbfe', color: '#1e40af' }}>
                                         <div style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <span>Room {modalSelectedRoom.room_number} ({modalSelectedRoom.type})</span>
@@ -1050,18 +1076,19 @@ export default function Bookings() {
                                                 fontWeight: 800,
                                                 padding: '2px 8px',
                                                 borderRadius: 4,
-                                                background: (modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? '#fee2e2' : '#dcfce7',
-                                                color: (modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? '#b91c1c' : '#15803d',
-                                                border: `1px solid ${(modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? '#fca5a5' : '#86efac'}`
+                                                background: selectedUnavailable ? '#fee2e2' : '#dcfce7',
+                                                color: selectedUnavailable ? '#b91c1c' : '#15803d',
+                                                border: `1px solid ${selectedUnavailable ? '#fca5a5' : '#86efac'}`
                                             }}>
-                                                {(modalSelectedRoom.status === 'occupied' || Number(modalSelectedRoom.is_booked) === 1) ? 'OCCUPIED' : 'AVAILABLE'}
+                                                {selectedUnavailable ? 'OCCUPIED' : 'AVAILABLE'}
                                             </span>
                                         </div>
                                         <div style={{ color: '#4b5563', marginTop: 4 }}>
                                             Rate: ETB {Number(modalSelectedRoom.price_per_night).toLocaleString()} per night • Max Capacity: <strong>{modalSelectedRoom.max_guests || 2} guests</strong>
                                         </div>
                                     </div>
-                                )}
+                                    )
+                                })()}
 
                                 {/* Stay Dates */}
                                 <div className="form-row">

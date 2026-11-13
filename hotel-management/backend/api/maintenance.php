@@ -42,32 +42,60 @@ switch ($method) {
         $stmt = $conn->prepare("INSERT INTO maintenance_requests (room_id,reported_by,assigned_to,category,title,description,priority,status) VALUES (?,?,?,?,?,?,?,?)");
         $stmt->bind_param('iiisssss', $room_id, $authUser['id'], $assigned, $category, $title, $description, $priority, $status);
         executeOrFail($stmt, $conn);
-        json_ok(['id' => $conn->insert_id, 'message' => 'Request submitted']);
+        $newReqId = (int) $conn->insert_id;
+        $roomStatus = $room_id ? RoomStatusService::onMaintenanceUpdated($conn, $room_id, $status) : null;
+        json_ok(['id' => $newReqId, 'room_status' => $roomStatus, 'message' => 'Request submitted']);
         break;
 
     case 'PUT':
         if (!$id) {
             json_fail(400, 'Request ID is required');
         }
+        $existingStmt = $conn->prepare("SELECT room_id, assigned_to, category, title, description, priority, status FROM maintenance_requests WHERE id=?");
+        $existingStmt->bind_param('i', $id);
+        $existingStmt->execute();
+        $existingReq = $existingStmt->get_result()->fetch_assoc();
+        $existingStmt->close();
+        if (!$existingReq) {
+            json_fail(404, 'Maintenance request not found');
+        }
+
         $d = json_decode(file_get_contents('php://input'), true) ?: [];
+        $newStatus = $d['status'] ?? $existingReq['status'];
+        if (!in_array($newStatus, ['open', 'in_progress', 'resolved', 'closed'], true)) {
+            json_fail(400, 'Invalid maintenance status');
+        }
+        $targetRoomId = !empty($existingReq['room_id']) ? (int) $existingReq['room_id'] : null;
+
         if ($authUser['role'] === 'maintenance' || (isset($d['status']) && count($d) <= 2)) {
-            $resolved = in_array($d['status'] ?? '', ['resolved', 'closed'], true) ? date('Y-m-d H:i:s') : null;
-            if (isset($d['resolution_notes'])) {
+            $resolved = in_array($newStatus, ['resolved', 'closed'], true) ? date('Y-m-d H:i:s') : null;
+            if (array_key_exists('resolution_notes', $d)) {
                 $stmt = $conn->prepare("UPDATE maintenance_requests SET status=?, resolved_at=?, resolution_notes=? WHERE id=?");
-                $stmt->bind_param('sssi', $d['status'], $resolved, $d['resolution_notes'], $id);
+                $stmt->bind_param('sssi', $newStatus, $resolved, $d['resolution_notes'], $id);
             } else {
                 $stmt = $conn->prepare("UPDATE maintenance_requests SET status=?, resolved_at=? WHERE id=?");
-                $stmt->bind_param('ssi', $d['status'], $resolved, $id);
+                $stmt->bind_param('ssi', $newStatus, $resolved, $id);
             }
         } else {
             authenticate(['admin', 'manager']);
-            $room_id = !empty($d['room_id']) ? (int) $d['room_id'] : null;
-            $assigned = !empty($d['assigned_to']) ? (int) $d['assigned_to'] : null;
-            $stmt = $conn->prepare("UPDATE maintenance_requests SET room_id=?,assigned_to=?,category=?,title=?,description=?,priority=?,status=? WHERE id=?");
-            $stmt->bind_param('iisssssi', $room_id, $assigned, $d['category'], $d['title'], $d['description'], $d['priority'], $d['status'], $id);
+            $targetRoomId = array_key_exists('room_id', $d) ? (!empty($d['room_id']) ? (int) $d['room_id'] : null) : ($existingReq['room_id'] !== null ? (int) $existingReq['room_id'] : null);
+            $assigned = array_key_exists('assigned_to', $d) ? (!empty($d['assigned_to']) ? (int) $d['assigned_to'] : null) : ($existingReq['assigned_to'] !== null ? (int) $existingReq['assigned_to'] : null);
+            $category = array_key_exists('category', $d) ? (string) $d['category'] : $existingReq['category'];
+            $title = array_key_exists('title', $d) ? (string) $d['title'] : $existingReq['title'];
+            $description = array_key_exists('description', $d) ? (string) $d['description'] : $existingReq['description'];
+            $priority = array_key_exists('priority', $d) ? (string) $d['priority'] : $existingReq['priority'];
+            $resolved = in_array($newStatus, ['resolved', 'closed'], true) ? date('Y-m-d H:i:s') : null;
+            $stmt = $conn->prepare("UPDATE maintenance_requests SET room_id=?,assigned_to=?,category=?,title=?,description=?,priority=?,status=?,resolved_at=? WHERE id=?");
+            $stmt->bind_param('iissssssi', $targetRoomId, $assigned, $category, $title, $description, $priority, $newStatus, $resolved, $id);
         }
         executeOrFail($stmt, $conn);
-        json_ok(['message' => 'Request updated']);
+
+        $oldRoomId = !empty($existingReq['room_id']) ? (int) $existingReq['room_id'] : null;
+        if ($oldRoomId && $oldRoomId !== $targetRoomId) {
+            RoomStatusService::onMaintenanceUpdated($conn, $oldRoomId, 'resolved');
+        }
+        $roomStatus = $targetRoomId ? RoomStatusService::onMaintenanceUpdated($conn, $targetRoomId, $newStatus) : null;
+        json_ok(['message' => 'Request updated', 'room_status' => $roomStatus]);
         break;
 
     default:

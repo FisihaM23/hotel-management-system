@@ -9,41 +9,51 @@ if (!function_exists('loadEnvFile')) {
         $loaded = true;
 
         $candidatePaths = [
-            'c:/Hotel managment/hotel-management/backend/.env',
-            'C:/wamp64/www/hotel-management/backend/.env',
-            'C:/wamp64/www/hotel-management/.env',
             dirname(__DIR__) . '/.env',
+            'c:/Hotel managment/hotel-management/backend/.env',
             dirname(__DIR__, 2) . '/backend/.env',
+            'C:/wamp64/www/hotel-management/backend/.env',
             dirname(__DIR__, 2) . '/.env'
         ];
 
         foreach ($candidatePaths as $path) {
-            if (file_exists($path) && is_readable($path)) {
-                $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (file_exists($path)) {
+                $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
                 if ($lines !== false) {
                     foreach ($lines as $line) {
                         $line = trim($line);
                         if (empty($line) || str_starts_with($line, '#')) continue;
                         if (str_starts_with($line, 're_')) {
-                            $val = trim($line, "\"'");
+                            $val = trim($line, "\"' \t\n\r\0\x0B");
                             putenv("Resend_API_KEY={$val}");
+                            putenv("RESEND_API_KEY={$val}");
                             $_ENV['Resend_API_KEY'] = $val;
+                            $_ENV['RESEND_API_KEY'] = $val;
                             $_SERVER['Resend_API_KEY'] = $val;
+                            $_SERVER['RESEND_API_KEY'] = $val;
                             continue;
                         }
                         $parts = explode('=', $line, 2);
                         if (count($parts) === 2) {
                             $key = trim($parts[0]);
-                            $val = trim(trim($parts[1]), "\"'");
+                            $val = trim(trim($parts[1]), "\"' \t\n\r\0\x0B");
                             if (!empty($key)) {
                                 putenv("{$key}={$val}");
                                 $_ENV[$key] = $val;
                                 $_SERVER[$key] = $val;
+                                if (strcasecmp($key, 'RESEND_API_KEY') === 0) {
+                                    putenv("Resend_API_KEY={$val}");
+                                    putenv("RESEND_API_KEY={$val}");
+                                    $_ENV['Resend_API_KEY'] = $val;
+                                    $_ENV['RESEND_API_KEY'] = $val;
+                                    $_SERVER['Resend_API_KEY'] = $val;
+                                    $_SERVER['RESEND_API_KEY'] = $val;
+                                }
                             }
                         }
                     }
+                    break;
                 }
-                break;
             }
         }
     }
@@ -54,12 +64,12 @@ loadEnvFile();
 
 function getResendApiKey() {
     loadEnvFile();
-    return getenv('Resend_API_KEY') 
-        ?: getenv('RESEND_API_KEY') 
-        ?: ($_ENV['Resend_API_KEY'] ?? '') 
-        ?: ($_ENV['RESEND_API_KEY'] ?? '')
-        ?: ($_SERVER['Resend_API_KEY'] ?? '')
-        ?: ($_SERVER['RESEND_API_KEY'] ?? '');
+    return getenv('RESEND_API_KEY') 
+        ?: getenv('Resend_API_KEY') 
+        ?: ($_ENV['RESEND_API_KEY'] ?? '') 
+        ?: ($_ENV['Resend_API_KEY'] ?? '')
+        ?: ($_SERVER['RESEND_API_KEY'] ?? '')
+        ?: ($_SERVER['Resend_API_KEY'] ?? '');
 }
 
 function getResendFromEmail() {
@@ -68,8 +78,8 @@ function getResendFromEmail() {
         ?: ($_ENV['RESEND_FROM_EMAIL'] ?? '')
         ?: ($_SERVER['RESEND_FROM_EMAIL'] ?? '');
     
-    // Default sender for Resend (onboarding@resend.dev works out of the box for all accounts)
-    return !empty($custom) ? $custom : 'Hotel Management & Resort Park <onboarding@resend.dev>';
+    // Default sender for Resend (onboarding@resend.dev works out of the box for test account owner)
+    return !empty($custom) ? $custom : 'Grand Hotel <onboarding@resend.dev>';
 }
 
 /**
@@ -240,29 +250,76 @@ function sendSmtpEmailFallback($toEmail, $toName, $subject, $htmlContent, $textC
 }
 
 /**
- * Send customer registration welcome email using Resend with multi-tier fallback
- * @param string $toEmail
- * @param string $toName
- * @param array $extra [phone, loginUrl]
- * @return array
+ * Send customer registration welcome email using Resend API to the customer's actual registered email address
+ * @param string $toEmail Customer's registered email address
+ * @param string $toName Customer's full name
+ * @param array $extra Optional parameters [loginUrl, temporary_password, phone]
+ * @return array ['success' => bool, 'channel' => string, 'delivered_to' => string|null, 'id' => string|null, 'error' => string|null, 'message' => string]
  */
 function sendCustomerWelcomeEmail($toEmail, $toName, $extra = []) {
-    $toName = trim($toName ?: 'Valued Guest');
-    $toEmail = trim($toEmail);
+    $toEmail = trim((string)$toEmail);
+    if (empty($toEmail) || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+        error_log("[Resend Welcome Email] Invalid recipient email provided: '{$toEmail}'");
+        return [
+            'success' => false,
+            'channel' => 'resend',
+            'delivered_to' => null,
+            'target_email' => $toEmail,
+            'http_code' => 400,
+            'error' => 'Invalid recipient email address',
+            'message' => 'Invalid recipient email address provided.'
+        ];
+    }
+
+    $toName = trim((string)$toName);
+    if (empty($toName)) {
+        $toName = 'Valued Guest';
+    }
+    $safeName = htmlspecialchars($toName, ENT_QUOTES, 'UTF-8');
+    $safeEmail = htmlspecialchars($toEmail, ENT_QUOTES, 'UTF-8');
+
     $loginUrl = $extra['loginUrl'] ?? 'http://localhost:5173/login';
+    $setupUrl = !empty($extra['setup_url']) ? trim((string)$extra['setup_url']) : '';
+    $tempPassword = !empty($extra['temporary_password']) ? trim((string)$extra['temporary_password']) : '';
     $supportEmail = 'befather7@gmail.com';
     $supportPhone = '+251 932 338 138';
 
-    $subject = "Welcome to Grand 6-Floor Hotel & Resort Park, {$toName}!";
+    // Required standardized subject
+    $subject = "Welcome to Grand Hotel – Your Account Has Been Successfully Created!";
 
-    // Premium HTML Template
+    // Prefer secure one-time password setup link over plaintext temporary password
+    $tempPasswordHtml = '';
+    $tempPasswordText = '';
+    if (!empty($setupUrl)) {
+        $safeSetupUrl = htmlspecialchars($setupUrl, ENT_QUOTES, 'UTF-8');
+        $tempPasswordHtml = <<<HTML
+      <div style="background:#142014; border:1.5px solid #22c55e; border-radius:10px; padding:16px; margin:20px 0; text-align:center;">
+        <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#94a3b8; font-weight:700; margin-bottom:10px;">Set Your Account Password</div>
+        <a href="{$safeSetupUrl}" style="display:inline-block; background:#22c55e; color:#041d0a; font-weight:800; padding:10px 22px; border-radius:99px; text-decoration:none; font-size:13px;">Set Password Now</a>
+        <div style="font-size:12px; color:#cbd5e1; margin-top:10px;">This one-time setup link expires in 24 hours. Please set a strong personal password before signing in.</div>
+      </div>
+HTML;
+        $tempPasswordText = "\nSet Your Password (one-time link, expires in 24 hours): {$setupUrl}\n";
+    } elseif (!empty($tempPassword)) {
+        $safeTempPw = htmlspecialchars($tempPassword, ENT_QUOTES, 'UTF-8');
+        $tempPasswordHtml = <<<HTML
+      <div style="background:#142014; border:1.5px dashed #22c55e; border-radius:10px; padding:16px; margin:20px 0; text-align:center;">
+        <div style="font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:#94a3b8; font-weight:700; margin-bottom:6px;">Your Temporary Access Password</div>
+        <div style="font-family:Courier, monospace; font-size:22px; font-weight:800; letter-spacing:2px; color:#22c55e;">{$safeTempPw}</div>
+        <div style="font-size:12px; color:#cbd5e1; margin-top:8px;">Please sign in using this temporary password and update it immediately.</div>
+      </div>
+HTML;
+        $tempPasswordText = "\nTemporary Access Password: {$tempPassword}\n(Please sign in and change this temporary password immediately).\n";
+    }
+
+    // Professional, Responsive Luxury HTML Template
     $htmlContent = <<<HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Grand 6-Floor Hotel & Resort Park</title>
+  <title>Welcome to Grand Hotel</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #050805; color: #e7ffe4; margin: 0; padding: 0; }
     .wrapper { max-width: 600px; margin: 20px auto; background-color: #0c130c; border: 1px solid #1e3820; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
@@ -274,7 +331,7 @@ function sendCustomerWelcomeEmail($toEmail, $toName, $extra = []) {
     .greeting { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 14px; }
     .lead { font-size: 14px; line-height: 1.6; color: #cbd5e1; margin-bottom: 20px; }
     .card { background-color: #142014; border: 1px solid #1e3820; border-radius: 12px; padding: 18px; margin-bottom: 22px; }
-    .card-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #22c55e; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    .card-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #22c55e; margin-bottom: 12px; }
     .feature-list { list-style: none; padding: 0; margin: 0; font-size: 13px; line-height: 1.8; color: #cbd5e1; }
     .feature-list li { margin-bottom: 6px; }
     .feature-list strong { color: #ffffff; }
@@ -292,44 +349,57 @@ function sendCustomerWelcomeEmail($toEmail, $toName, $extra = []) {
     <!-- HEADER -->
     <div class="header">
       <div class="badge">🏛️ Grand Hospitality Architecture</div>
-      <h1>Grand 6-Floor Hotel & Resort Park</h1>
+      <h1>Grand Hotel & Resort Park</h1>
       <p>Luxury Accommodation • Resort Park & Gardens • Ethiopian & International Dining</p>
     </div>
 
     <!-- MAIN BODY -->
     <div class="content">
-      <div class="greeting">Dear {$toName},</div>
+      <div class="greeting">Dear {$safeName},</div>
       <p class="lead">
-        Welcome to the <strong>Grand 6-Floor International Hospitality Building & Resort Park</strong> guest platform! Your customer account has been successfully provisioned. We are delighted to host you for world-class hospitality, gourmet dining, and relaxing botanical gardens.
+        <strong>Welcome to Grand Hotel!</strong><br><br>
+        We are delighted to welcome you as our valued customer.<br><br>
+        Your account has been successfully created. You can now explore our hotel services, browse available rooms across our 6-floor architectural building, make reservations, and manage your bookings conveniently through our website.
       </p>
+
+      {$tempPasswordHtml}
 
       <!-- HIGHLIGHTS CARD -->
       <div class="card">
-        <div class="card-title">✨ What You Can Experience On Our Platform</div>
+        <div class="card-title">✨ What You Can Experience At Grand Hotel</div>
         <ul class="feature-list">
-          <li>🏢 <strong>6-Floor Architecture:</strong> Explore & book rooms across all six floors — from ground botanical gardens to executive suites and panoramic sky penthouse.</li>
-          <li>🇪🇹 <strong>Authentic Ethiopian Food:</strong> Taste authentic culinary feasts including Doro Wat, Special Tibs, Kitfo, and traditional fasting platters (starting from 150 ETB).</li>
-          <li>🍹 <strong>Refreshment & Cocktail Lounge:</strong> Enjoy craft cocktails, draft beers, natural juices, and traditional Ethiopian Arabica coffee ceremonies.</li>
-          <li>💳 <strong>Easy Local & Mobile Payments:</strong> Reserve rooms and settle dining bills instantly via Telebirr, CBE Birr, Chapa, or Pay at Desk.</li>
+          <li>🏢 <strong>6-Floor Luxury Architecture:</strong> Explore & book rooms across all six floors — from botanical garden terrace suites to panoramic sky penthouses.</li>
+          <li>🇪🇹 <strong>Authentic Ethiopian Cuisine:</strong> Savor gourmet culinary specialties including Doro Wat, Special Tibs, Kitfo, and traditional coffee ceremonies.</li>
+          <li>🍹 <strong>Refreshment & Cocktail Lounge:</strong> Enjoy artisan refreshments, fresh juices, fine wines, and handcrafted beverages.</li>
+          <li>💳 <strong>Easy Local & Mobile Payments:</strong> Securely reserve and pay via Telebirr, CBE Birr, Chapa, or Pay at Desk.</li>
         </ul>
       </div>
 
       <!-- ACCOUNT SUMMARY -->
       <div class="account-box">
-        <div><strong>Registered Account:</strong> <span>{$toEmail}</span></div>
-        <div><strong>Access Level:</strong> <span>Registered Hotel Guest / Customer</span></div>
-        <div><strong>Platform Status:</strong> <span style="color:#10b981;">Active & Ready</span></div>
+        <div><strong>Registered Email:</strong> <span>{$safeEmail}</span></div>
+        <div><strong>Customer Name:</strong> <span>{$safeName}</span></div>
+        <div><strong>Account Status:</strong> <span style="color:#10b981;">Active & Ready</span></div>
       </div>
 
       <!-- CTA BUTTON -->
       <div class="btn-container">
-        <a href="{$loginUrl}" class="btn" target="_blank">Access Guest Portal & Book Room</a>
+        <a href="{$loginUrl}" class="btn" target="_blank">Access Guest Portal & Book Your Stay</a>
       </div>
+
+      <p style="font-size:13.5px; line-height:1.6; color:#cbd5e1; margin-top:24px;">
+        Thank you for choosing Grand Hotel. We look forward to providing you with an excellent hospitality experience.
+      </p>
+
+      <p style="font-size:13.5px; color:#ffffff; font-weight:700; margin-top:16px;">
+        Best regards,<br>
+        <span style="color:#22c55e;">Grand Hotel Management Team</span>
+      </p>
 
       <!-- BILINGUAL AMHARIC WELCOME -->
       <div class="amharic-section">
-        <strong>እንኳን ወደ ሆቴላችን በደህና መጡ!</strong><br>
-        የእርስዎ የተጠቃሚ መለያ በተሳካ ሁኔታ ተፈጥሯል። በ6ቱ ፎቆች ውስጥ የሚገኙ የቅንጦት ክፍሎችን መያዝ፣ የባህላዊ እና ዓለም አቀፍ ምግቦችን ማዘዝ፣ እንዲሁም ዘመናዊ መስተንግዶ ማግኘት ይችላሉ።
+        <strong>እንኳን ወደ ግራንድ ሆቴል በደህና መጡ!</strong><br>
+        የእርስዎ የተጠቃሚ መለያ በተሳካ ሁኔታ ተፈጥሯል። በሆቴላችን ውስጥ የሚገኙ የቅንጦት ክፍሎችን መያዝ፣ የባህላዊ እና ዓለም አቀፍ ምግቦችን ማዘዝ፣ እንዲሁም ዘመናዊ መስተንግዶ ማግኘት ይችላሉ።
       </div>
     </div>
 
@@ -337,98 +407,107 @@ function sendCustomerWelcomeEmail($toEmail, $toName, $extra = []) {
     <div class="footer">
       <div>System Administrator: <strong>Mulugeta Fisiha</strong></div>
       <div>Direct Inquiries: <a href="mailto:{$supportEmail}">{$supportEmail}</a> | Phone: <strong>{$supportPhone}</strong></div>
-      <div style="margin-top: 8px;">&copy; 2026 Grand 6-Floor Hotel & Resort Park. All rights reserved.</div>
+      <div style="margin-top: 8px;">&copy; 2026 Grand Hotel & Resort Park • Addis Ababa, Ethiopia. All rights reserved.</div>
     </div>
   </div>
 </body>
 </html>
 HTML;
 
-    // Plain text fallback
+    // Plain text alternative
     $textContent = <<<TEXT
-Welcome to Grand 6-Floor Hotel & Resort Park!
-
 Dear {$toName},
 
-Your customer account has been successfully registered on our luxury hospitality platform.
+Welcome to Grand Hotel!
 
+We are delighted to welcome you as our valued customer.
+
+Your account has been successfully created. You can now explore our hotel services, browse available rooms, make reservations, and manage your bookings conveniently through our website.
+{$tempPasswordText}
 Account Details:
-- Email: {$toEmail}
-- Role: Guest / Customer
+- Registered Email: {$toEmail}
+- Customer Name: {$toName}
 - Status: Active & Ready
 
-What you can experience:
+Experience at Grand Hotel:
 1. 6-Floor Hospitality Architecture & Executive Suites
-2. Authentic Ethiopian Traditional Food (Doro Wat, Special Tibs, Kitfo, from 150 ETB)
-3. Refreshment, Cocktail & Arabica Coffee Lounge
+2. Authentic Ethiopian Traditional Cuisine (Doro Wat, Special Tibs, Kitfo)
+3. Refreshment, Cocktail & Arabica Coffee Ceremony Lounge
 4. Instant bookings with Telebirr, CBE Birr, and Chapa
 
 Sign in to your guest portal:
 {$loginUrl}
 
-Bilingual Welcome:
-እንኳን ወደ ታላቁ 6 ፎቅ ዓለም አቀፍ የሆቴል ህንፃ እና የሪዞርት ፓርክ በደህና መጡ!
+Thank you for choosing Grand Hotel. We look forward to providing you with an excellent hospitality experience.
+
+Best regards,
+Grand Hotel Management Team
 
 Need assistance? Contact System Administrator Mulugeta Fisiha at {$supportEmail} or {$supportPhone}.
-
-Grand 6-Floor Hotel & Resort Park
+Grand Hotel & Resort Park • Addis Ababa, Ethiopia
 TEXT;
 
-    // 1. Direct delivery via Resend
+    // Direct delivery via Resend API - recipient is strictly the customer's email ($toEmail)
     $resendResult = sendResendEmail($toEmail, $subject, $htmlContent, $textContent);
 
     if (!empty($resendResult['success'])) {
+        error_log("[Resend Welcome Email] Successfully dispatched welcome email to customer: {$toEmail} (ID: " . ($resendResult['id'] ?? '') . ")");
         return [
             'success' => true,
             'channel' => 'resend',
             'delivered_to' => $toEmail,
             'id' => $resendResult['id'] ?? null,
             'http_code' => $resendResult['http_code'] ?? 200,
-            'message' => "Welcome email sent directly to {$toEmail} via Resend."
+            'message' => "Welcome email sent successfully to {$toEmail} via Resend."
         ];
     }
 
-    // 2. Check for Resend Sandbox / Unverified Domain Restriction (HTTP 403 / 422)
-    $errStr = is_string($resendResult['error'] ?? '') ? $resendResult['error'] : json_encode($resendResult['error'] ?? '');
+    $errMsg = is_string($resendResult['error'] ?? '') ? $resendResult['error'] : json_encode($resendResult['error'] ?? '');
     $isSandboxRestriction = (isset($resendResult['http_code']) && ($resendResult['http_code'] === 403 || $resendResult['http_code'] === 422))
-        || stripos($errStr, 'testing emails') !== false
-        || stripos($errStr, 'verify a domain') !== false;
+        || stripos($errMsg, 'testing emails') !== false
+        || stripos($errMsg, 'verify a domain') !== false;
 
-    // Attempt direct SMTP fallback if configured
-    if (sendSmtpEmailFallback($toEmail, $toName, $subject, $htmlContent, $textContent)) {
-        return [
-            'success' => true,
-            'channel' => 'smtp',
-            'delivered_to' => $toEmail,
-            'message' => "Welcome email sent directly to {$toEmail} via SMTP fallback."
-        ];
-    }
+    error_log("[Resend Welcome Email] Delivery to customer {$toEmail} failed (HTTP " . ($resendResult['http_code'] ?? 0) . "): {$errMsg}");
 
-    // 3. Resend Sandbox Mode: Dispatch a verified notification copy to the administrator (befather7@gmail.com)
-    if ($isSandboxRestriction) {
-        $dispatchSubject = "[Customer Welcome Notice] Welcome {$toName} ({$toEmail})";
-        $bannerHtml = '<div style="background:#1e1b4b;border:1px solid #4338ca;color:#e0e7ff;padding:14px;border-radius:10px;margin-bottom:20px;font-size:13px;line-height:1.6;">'
-            . '<div style="font-weight:bold;color:#818cf8;margin-bottom:4px;">⚠️ Resend Sandbox Mode Active</div>'
-            . 'New customer <strong>' . htmlspecialchars($toName) . '</strong> registered with email <strong>' . htmlspecialchars($toEmail) . '</strong>.<br>'
-            . 'Because Resend is using the default test domain (<em>onboarding@resend.dev</em>), Resend sends to the verified account owner (<strong>' . htmlspecialchars($supportEmail) . '</strong>).<br>'
-            . '<span style="color:#94a3b8;">To send directly to external customer inboxes, verify a custom domain at <a href="https://resend.com/domains" style="color:#a5b4fc;text-decoration:underline;" target="_blank">resend.com/domains</a> and set <code>RESEND_FROM_EMAIL</code> in <code>backend/.env</code>.</span>'
-            . '</div>';
-        $dispHtml = str_replace('<div class="content">', '<div class="content">' . $bannerHtml, $htmlContent);
-        $dispText = "=== RESEND SANDBOX DISPATCH ===\nNew Customer Registered: {$toName} ({$toEmail})\nDelivered to Admin: {$supportEmail}\nVerify custom domain at resend.com/domains for direct recipient dispatch.\n===============================\n\n" . $textContent;
+    // Note: We never reroute the customer's welcome email to the administrator.
+    // The recipient is strictly preserved as the customer.
+    return [
+        'success' => false,
+        'channel' => 'resend',
+        'delivered_to' => null,
+        'target_email' => $toEmail,
+        'http_code' => $resendResult['http_code'] ?? 0,
+        'error' => $errMsg,
+        'sandbox_restricted' => $isSandboxRestriction,
+        'message' => $isSandboxRestriction
+            ? "Resend is using onboarding@resend.dev (test domain). To deliver to external customer inboxes like {$toEmail}, please verify your custom domain in Resend and update RESEND_FROM_EMAIL in backend/.env."
+            : "Failed to deliver welcome email to {$toEmail}: {$errMsg}"
+    ];
+}
 
-        $dispResult = sendResendEmail($supportEmail, $dispatchSubject, $dispHtml, $dispText);
-        if (!empty($dispResult['success'])) {
-            return [
-                'success' => true,
-                'channel' => 'resend_sandbox_dispatch',
-                'delivered_to' => $supportEmail,
-                'customer_email' => $toEmail,
-                'sandbox_mode' => true,
-                'id' => $dispResult['id'] ?? null,
-                'message' => "Welcome email dispatched to administrator ({$supportEmail}) in Resend sandbox mode."
-            ];
-        }
-    }
-
-    return $resendResult;
+/**
+ * Send a secure one-time password reset link via Resend without storing the link in DB notifications.
+ */
+function sendPasswordResetLinkEmail(string $toEmail, string $toName, string $resetUrl): array {
+    $safeName = htmlspecialchars($toName ?: 'Valued User', ENT_QUOTES, 'UTF-8');
+    $safeUrl = htmlspecialchars($resetUrl, ENT_QUOTES, 'UTF-8');
+    $subject = 'Grand Hotel – Secure Password Reset Link';
+    $html = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#050805; color:#e2e8f0; padding:24px;">
+  <div style="max-width:540px; margin:0 auto; background:#0c130c; border:1px solid #22c55e; border-radius:14px; padding:24px;">
+    <h2 style="color:#22c55e; margin-top:0;">Password Reset Request</h2>
+    <p>Hello <strong>{$safeName}</strong>,</p>
+    <p>A one-time password reset link was generated for your Grand Hotel account. This link expires in 1 hour.</p>
+    <div style="text-align:center; margin:24px 0;">
+      <a href="{$safeUrl}" style="display:inline-block; background:#22c55e; color:#041d0a; font-weight:800; padding:12px 26px; border-radius:99px; text-decoration:none;">Reset Password</a>
+    </div>
+    <p style="font-size:12px; color:#94a3b8;">If you did not request this, please ignore this email and contact your administrator.</p>
+  </div>
+</body>
+</html>
+HTML;
+    $text = "Hello {$toName},\n\nUse this one-time link (expires in 1 hour) to reset your Grand Hotel password:\n{$resetUrl}\n";
+    return sendResendEmail($toEmail, $subject, $html, $text);
 }

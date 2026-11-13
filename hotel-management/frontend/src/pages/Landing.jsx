@@ -66,7 +66,12 @@ export default function Landing() {
   })
 
   useEffect(() => {
-    getRooms()
+    const activeCheckIn = bookingModal ? form.check_in : searchCheckIn
+    const activeCheckOut = bookingModal ? form.check_out : searchCheckOut
+    const params = (activeCheckIn && activeCheckOut && activeCheckOut > activeCheckIn)
+      ? { check_in: activeCheckIn, check_out: activeCheckOut }
+      : undefined
+    getRooms(params)
       .then(res => {
         setRooms(Array.isArray(res.data) ? res.data : [])
       })
@@ -74,7 +79,7 @@ export default function Landing() {
         console.error('Failed to load rooms for landing:', err)
       })
       .finally(() => setLoadingRooms(false))
-  }, [])
+  }, [bookingModal, form.check_in, form.check_out, searchCheckIn, searchCheckOut])
 
   useEffect(() => {
     const handleAiBookRoom = (e) => {
@@ -443,8 +448,13 @@ export default function Landing() {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
             {filteredRooms.map(room => {
-              const isBooked = room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked'
-              const isAvailable = room.status === 'available' && !isBooked
+              const hasSearchDates = Boolean(searchCheckIn && searchCheckOut && searchCheckOut > searchCheckIn)
+              const isBooked = hasSearchDates
+                ? Number(room.is_booked) === 1
+                : (room.status === 'occupied' || Number(room.is_booked) === 1 || room.status === 'booked')
+              const isAvailable = hasSearchDates
+                ? (room.status !== 'maintenance' && !isBooked)
+                : (room.status === 'available' && !isBooked)
               const statusDisplay = isBooked ? 'Occupied' : (isAvailable ? 'Available' : room.status)
               const priceNum = Number(room.price_per_night) || 0
               const amenitiesList = room.amenities ? room.amenities.split(',').map(s => s.trim()) : ['WiFi', 'Smart TV', 'AC']
@@ -909,8 +919,11 @@ export default function Landing() {
                     style={{ background: 'var(--tp-surf-2, #142014)', color: 'var(--tp-ink, #fff)' }}
                   >
                     {rooms.map(r => {
-                      const isBooked = r.status === 'occupied' || Number(r.is_booked) === 1
-                      const statusTag = isBooked ? 'Occupied' : (r.status === 'available' ? 'Available' : r.status)
+                      const hasModalDates = Boolean(form.check_in && form.check_out && form.check_out > form.check_in)
+                      const isBooked = hasModalDates
+                        ? Number(r.is_booked) === 1
+                        : (r.status === 'occupied' || Number(r.is_booked) === 1)
+                      const statusTag = isBooked ? 'Occupied' : (hasModalDates ? 'Available' : (r.status === 'available' ? 'Available' : r.status))
                       return (
                         <option key={r.id} value={r.id} disabled={isBooked || r.status === 'maintenance'}>
                           Room #{r.room_number} ({r.type} - Floor {r.floor}) [{statusTag}] • Max {r.max_guests || 2} guests • ETB {r.price_per_night}
